@@ -1,13 +1,31 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, Plugin} from 'vite';
+
+// Ce plugin permet à index.html d'utiliser directement ./assets-bundle/app.js sur GitHub Pages (0 erreur 404 console)
+// tout en utilisant /src/main.tsx lors du développement et du build Vite.
+function githubPagesRootPlugin(): Plugin {
+  return {
+    name: 'github-pages-root-entry',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        return html
+          .replace(/<link[^>]*href="\.\/assets-bundle\/app\.css"[^>]*>/g, '')
+          .replace(
+            /<script[^>]*src="\.\/assets-bundle\/app\.js"[^>]*><\/script>/g,
+            '<script type="module" src="/src/main.tsx"></script>'
+          );
+      },
+    },
+  };
+}
 
 export default defineConfig(() => {
   return {
-    // Utilise './' pour que les assets fonctionnent à la fois sur https://faab-expert.github.io/risques/ et à la racine
     base: './',
-    plugins: [react(), tailwindcss()],
+    plugins: [githubPagesRootPlugin(), react(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
