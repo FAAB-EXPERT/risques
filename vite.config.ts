@@ -5,6 +5,8 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    // Utilise './' pour que les assets fonctionnent à la fois sur https://faab-expert.github.io/risques/ et à la racine
+    base: './',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
