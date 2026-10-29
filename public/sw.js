@@ -1,4 +1,4 @@
-const CACHE_NAME = 'f-pllan-pwa-cache-v2';
+const CACHE_NAME = 'faab-risk-pwa-cache-v20261029';
 const CORE_ASSETS = [
   './',
   './index.html',

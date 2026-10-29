@@ -1,0 +1,62 @@
+{
+  "id": "./?app=f-pllan",
+  "name": "F-PLLAN",
+  "short_name": "F-PLLAN",
+  "description": "F-PLLAN (FAAB PLAN) — Plateforme Universelle de Planification Stratégique, Réseau PERT/CPM, Matrice RACI, Suivi Opérationnel & Génération de 22 Documents Officiels",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "background_color": "#0c4a6e",
+  "theme_color": "#0c4a6e",
+  "categories": [
+    "productivity",
+    "business",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "./assets/aistudio/pwa-192x192_07377e05.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/aistudio/pwa-192x192_07377e05.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./assets/aistudio/pwa-512x512_28c10065.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/aistudio/pwa-512x512_28c10065.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./assets/aistudio/apple-touch-icon_bcb26926.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/aistudio/favicon_56f6f572.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
