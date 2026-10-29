@@ -4,7 +4,6 @@ import React, {
   useRef,
   useMemo,
   Suspense,
-  lazy,
   startTransition
 } from 'react';
 import {
@@ -105,57 +104,15 @@ import {
   sanitizeCsvValueOnImport
 } from './securityUtils';
 
-// Chargement asynchrone code-splitté (Next.js / React 19 Suspense + Préchargement Idle) pour une fluidité maximale
-const GanttAndTreeView = lazy(() =>
-  import('./components/GanttAndTreeView').then(m => ({
-    default: m.GanttAndTreeView
-  }))
-);
-const FicheTechniquePages = lazy(() =>
-  import('./components/FicheTechniquePages').then(m => ({
-    default: m.FicheTechniquePages
-  }))
-);
-const DocumentGeneratorView = lazy(() =>
-  import('./components/DocumentGeneratorView').then(m => ({
-    default: m.DocumentGeneratorView
-  }))
-);
-const RiskDashboardView = lazy(() =>
-  import('./components/RiskViews').then(m => ({
-    default: m.RiskDashboardView
-  }))
-);
-const RiskOperationsView = lazy(() =>
-  import('./components/RiskViews').then(m => ({
-    default: m.RiskOperationsView
-  }))
-);
-const OperationalMatrices = lazy(() =>
-  import('./components/OperationalMatrices').then(m => ({
-    default: m.OperationalMatrices
-  }))
-);
-const CategoriesActorsView = lazy(() =>
-  import('./components/CategoriesActorsView').then(m => ({
-    default: m.CategoriesActorsView
-  }))
-);
-const QrBarcodeScannerModal = lazy(() =>
-  import('./components/QrBarcodeScannerModal').then(m => ({
-    default: m.QrBarcodeScannerModal
-  }))
-);
-const InternalActorProfileModal = lazy(() =>
-  import('./components/InternalActorProfileModal').then(m => ({
-    default: m.InternalActorProfileModal
-  }))
-);
-const SuperAdminDashboardView = lazy(() =>
-  import('./components/SuperAdminDashboardView').then(m => ({
-    default: m.SuperAdminDashboardView
-  }))
-);
+import { GanttAndTreeView } from './components/GanttAndTreeView';
+import { FicheTechniquePages } from './components/FicheTechniquePages';
+import { DocumentGeneratorView } from './components/DocumentGeneratorView';
+import { RiskDashboardView, RiskOperationsView } from './components/RiskViews';
+import { OperationalMatrices } from './components/OperationalMatrices';
+import { CategoriesActorsView } from './components/CategoriesActorsView';
+import { QrBarcodeScannerModal } from './components/QrBarcodeScannerModal';
+import { InternalActorProfileModal } from './components/InternalActorProfileModal';
+import { SuperAdminDashboardView } from './components/SuperAdminDashboardView';
 import {
   auth,
   googleProvider,
@@ -509,32 +466,6 @@ export function App() {
     });
     return () => unsubscribe();
   }, []);
-
-  // Préchargement asynchrone en tâche de fond (Idle Prefetching) des modules selon le rôle exclusif
-  useEffect(() => {
-    if (!isHydrated || !authUser) return;
-    const preloadModules = () => {
-      if (isSuperAdminEmail(authUser.email)) {
-        void import('./components/SuperAdminDashboardView');
-      } else {
-        void import('./components/OperationalMatrices');
-        void import('./components/GanttAndTreeView');
-        void import('./components/CategoriesActorsView');
-        void import('./components/FicheTechniquePages');
-        void import('./components/DocumentGeneratorView');
-        void import('./components/RiskViews');
-      }
-    };
-    if (typeof (window as any).requestIdleCallback === 'function') {
-      const id = (window as any).requestIdleCallback(preloadModules, {
-        timeout: 2000
-      });
-      return () => (window as any).cancelIdleCallback?.(id);
-    } else {
-      const timer = setTimeout(preloadModules, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [isHydrated, authUser]);
 
   // Lorsqu'on clique sur "Se connecter", Google Sign-In authentifie EN PREMIER, puis ouvre immédiatement le popup Code PIN (défaut "0000") / Touch ID / Face ID
   const handleGoogleSignIn = async () => {
