@@ -1,6 +1,6 @@
 {
-  "name": "Plateforme de Pilotage et Suivi des Risques Opérationnels",
-  "description": "Plateforme de gouvernance et de maîtrise des risques opérationnels selon la norme ISO 31000 et la méthode GAR. Cartographie interactive, matrice d'impact QCD, chronogramme et pilotage Kanban.",
+  "name": "FAAB RISK",
+  "description": "FAAB RISK - Plateforme de Gouvernance, Pilotage et Suivi des Risques Opérationnels (ISO 31000 & Méthode GAR). Cartographie interactive, matrice d'impact QCD, chronogramme et pilotage Kanban.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

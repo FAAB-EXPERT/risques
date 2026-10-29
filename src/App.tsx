@@ -1,2100 +1,3651 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell
-} from 'recharts';
-import { 
-  LayoutDashboard, Folder, CalendarDays, Calendar, AlertTriangle, 
-  Activity, Menu, 
-  Diamond, Star, Shield, Grid, Filter, Plus, Trash2, Edit, X, Save,
-  Home, Mail, Phone, Unlock, HelpCircle, ChevronRight
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  Suspense,
+  lazy,
+  startTransition
+} from 'react';
+import {
+  Menu,
+  X,
+  Home,
+  LayoutDashboard,
+  GanttChart,
+  Kanban,
+  FileText,
+  Download,
+  Upload,
+  Plus,
+  Trash2,
+  FolderOpen,
+  Sun,
+  Moon,
+  User,
+  CheckCircle2,
+  AlertTriangle,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  RefreshCw,
+  Printer,
+  Filter,
+  Target,
+  Briefcase,
+  Layers,
+  Award,
+  DollarSign,
+  TrendingUp,
+  HelpCircle,
+  Network,
+  Calendar,
+  ListChecks,
+  FileSpreadsheet,
+  FileUp,
+  FileDown,
+  Save,
+  Users,
+  Globe,
+  QrCode,
+  ShieldCheck,
+  Activity,
+  Grid
 } from 'lucide-react';
+import {
+  CurrencyCode,
+  LanguageCode,
+  ThemeMode,
+  UserProfile,
+  Dossier,
+  Axe,
+  Project,
+  Task,
+  CustomDocsMap,
+  CustomDocFields,
+  InstitutionalDocType,
+  CategorizedActor
+} from './types';
+import {
+  defaultUserProfile,
+  defaultCustomDocsData,
+  initialDossiers,
+  loadAppStateFromIDB,
+  saveAppStateToIDB,
+  setActiveUserStorageUid,
+  ensureDossierCategorizedActors,
+  renameActorInDossierTasks
+} from './db';
+import { translations, formatCurrency } from './i18n';
+import { generateDirectWhitePDF } from './pdfExport';
+import {
+  saveProgramFile,
+  initExportStorage,
+  setActiveExportUserUid,
+  pickFaabPlanFolder,
+  downloadProgramFolderZip
+} from './services/exportStorage';
+import {
+  STANDARD_PHASES,
+  getTodayISO,
+  computeTaskMetrics,
+  recalculateProjectTasksOnKanbanMove,
+  computeDossierPertSummary
+} from './pertUtils';
+import { AppLogo } from './components/AppLogo';
+import { LandingPage } from './components/LandingPage';
+import {
+  UserProfileView,
+  DossiersAndProjectsView
+} from './components/UserProfileAndDossiersView';
+import { resolveProgramRaciContext } from './docMatrices';
+import {
+  safeJsonParse,
+  sanitizeCsvCellForExport,
+  sanitizeCsvValueOnImport
+} from './securityUtils';
 
-const BriefcaseIcon = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-  </svg>
+// Chargement asynchrone code-splitté (Next.js / React 19 Suspense + Préchargement Idle) pour une fluidité maximale
+const GanttAndTreeView = lazy(() =>
+  import('./components/GanttAndTreeView').then(m => ({
+    default: m.GanttAndTreeView
+  }))
 );
+const FicheTechniquePages = lazy(() =>
+  import('./components/FicheTechniquePages').then(m => ({
+    default: m.FicheTechniquePages
+  }))
+);
+const DocumentGeneratorView = lazy(() =>
+  import('./components/DocumentGeneratorView').then(m => ({
+    default: m.DocumentGeneratorView
+  }))
+);
+const RiskDashboardView = lazy(() =>
+  import('./components/RiskViews').then(m => ({
+    default: m.RiskDashboardView
+  }))
+);
+const RiskOperationsView = lazy(() =>
+  import('./components/RiskViews').then(m => ({
+    default: m.RiskOperationsView
+  }))
+);
+const OperationalMatrices = lazy(() =>
+  import('./components/OperationalMatrices').then(m => ({
+    default: m.OperationalMatrices
+  }))
+);
+const CategoriesActorsView = lazy(() =>
+  import('./components/CategoriesActorsView').then(m => ({
+    default: m.CategoriesActorsView
+  }))
+);
+const QrBarcodeScannerModal = lazy(() =>
+  import('./components/QrBarcodeScannerModal').then(m => ({
+    default: m.QrBarcodeScannerModal
+  }))
+);
+const InternalActorProfileModal = lazy(() =>
+  import('./components/InternalActorProfileModal').then(m => ({
+    default: m.InternalActorProfileModal
+  }))
+);
+const SuperAdminDashboardView = lazy(() =>
+  import('./components/SuperAdminDashboardView').then(m => ({
+    default: m.SuperAdminDashboardView
+  }))
+);
+import {
+  auth,
+  googleProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  FirebaseUser,
+  isSuperAdminEmail,
+  mapFirebaseSdkUser
+} from './firebase';
+import {
+  syncFirebaseUserToRegistry,
+  isSessionPinVerifiedForUser,
+  setSessionPinVerifiedForUser
+} from './services/superAdminService';
+import {
+  SuperAdminAuthModal,
+  AuthModalStep
+} from './components/SuperAdminAuthModal';
+import { AuthStatusButton } from './components/AuthStatusButton';
+import { FirebaseAuthHelpModal } from './components/FirebaseAuthHelpModal';
 
-// Valeurs d'options définies
-const DROPDOWNS = {
-  riskStatus: ['nouveau', 'en traitement', 'bloqué', 'traité'],
-  nature: [
-    'politique/ administratif',
-    'economique / financier',
-    'socio culturel',
-    'technologie / technique',
-    'environnement / santé',
-    'légal /juridique'
-  ],
-  probabilite: ['improbable', 'peu probable', 'probable', 'très probable'],
-  gravite: ['mineur', 'majeur', 'grave', 'catastrophique'],
-  criticite: ['modéré', 'critique', 'tres critique'],
-  consequence: ['cout', 'délai', 'qualité'],
-  tendance: ['stable', 'hausse', 'baisse']
-};
+export function App() {
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile>(defaultUserProfile);
+  const [dossiers, setDossiers] = useState<Dossier[]>(initialDossiers);
+  const [activeDossierId, setActiveDossierId] = useState<string>(
+    initialDossiers[0].id
+  );
+  const [language, setLanguage] = useState<LanguageCode>('FR');
+  const [currency, setCurrency] = useState<CurrencyCode>('FCFA');
+  const [theme, setTheme] = useState<ThemeMode>('light');
+  const [lastJsonFileName, setLastJsonFileName] = useState<string>(
+    'faab_plan_sauvegarde.json'
+  );
+  const [activeTab, setActiveTab] = useState<string>('accueil');
+  const [customDocsData, setCustomDocsData] =
+    useState<CustomDocsMap>(defaultCustomDocsData);
 
-export interface TaskItem {
-  id: string;
-  type: string;
-  taskOrMilestone: string;
-  activity: string;
-  phase: string;
-  name: string;
-  startDate: string;
-  endDate: string;
-  actualStartDate?: string;
-  actualEndDate?: string;
-  status: string;
-  assignee: string;
-  responsabilite: string;
-  livrable: string;
-  validated?: boolean;
-  antecedent?: string;
-  dateIdentification: string;
-  declarePar: string;
-  riskStatus: string;
-  nature: string;
-  probabilite: string;
-  gravite: string;
-  criticite: string;
-  consequence: string;
-  tendance: string;
-  actionPreventive: string;
-  actionCorrective: string;
-  dateResolution: string;
-  resolutionFinale: string;
-  commentaire: string;
-  projectName?: string;
-  projectId?: string;
-  axeId?: string;
-  dossierId?: string;
-  isReadOnly?: boolean;
-  number?: string;
-}
+  // Firebase Authentication, PIN Verification & Exclusive Role States
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
+  const [isAuthHelpModalOpen, setIsAuthHelpModalOpen] = useState<boolean>(false);
+  const [authErrorCode, setAuthErrorCode] = useState<string>('auth/unauthorized-domain');
+  const [authErrorMessage, setAuthErrorMessage] = useState<string>('');
+  const [isPinVerified, setIsPinVerified] = useState<boolean>(false);
+  const [isSuperAdminAuthModalOpen, setIsSuperAdminAuthModalOpen] =
+    useState<boolean>(false);
+  const [superAdminAuthModalStep, setSuperAdminAuthModalStep] =
+    useState<AuthModalStep>('pin_and_biometric');
+  const [isDeviceLocked, setIsDeviceLocked] = useState<boolean>(false);
 
-export interface ProjectItem {
-  id: string;
-  name: string;
-  tasks: TaskItem[];
-  dossierId?: string;
-  dossierName?: string;
-  axeName?: string;
-  axeId?: string;
-  isReadOnly?: boolean;
-}
+  // Slidebar & UI states
+  const [isSlidebarOpen, setIsSlidebarOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isGlobalScannerOpen, setIsGlobalScannerOpen] = useState(false);
+  const [isCategoryProfileModalOpen, setIsCategoryProfileModalOpen] = useState(false);
+  const [selectedCategoryActorName, setSelectedCategoryActorName] = useState<string>(
+    defaultUserProfile.fullName
+  );
 
-export interface AxeItem {
-  id: string;
-  name: string;
-  projects: ProjectItem[];
-}
+  // Filters
+  const [filterAxeId, setFilterAxeId] = useState<string>('ALL');
+  const [filterProjectId, setFilterProjectId] = useState<string>('ALL');
 
-export interface DossierItem {
-  id: string;
-  name: string;
-  horizonPlan: string;
-  psdYear: number;
-  horizonYears: number;
-  isReadOnly?: boolean;
-  type: string;
-  institution: string;
-  description: string;
-  axes: AxeItem[];
-}
+  // PERT View & Zoom (down to 10% = 0.10)
+  const [pertZoom, setPertZoom] = useState<number>(1);
+  const [pertViewMode, setPertViewMode] = useState<'graph' | 'table'>('graph');
 
-const initialData: DossierItem[] = [
-  {
-    id: 'dossier-strategique-default',
-    name: 'Plan Stratégique d\'Activités & Risques',
-    horizonPlan: '2026-2035',
-    psdYear: 2026,
-    horizonYears: 10,
-    isReadOnly: false,
-    type: 'standard',
-    institution: 'MINISTÈRE DE LA TRANSITION DIGITALE',
-    description: 'Cadre de référence stratégique et opérationnel pour le suivi des tâches, risques et budgets de l\'entreprise.',
-    axes: [
-      {
-        id: 'axe-1-demo',
-        name: 'Axe 1 : Transformation Digitale & Gestion Sécurisée',
-        projects: [
-          {
-            id: 'proj-1-demo',
-            name: 'Projet Pilote : Déploiement du Registre de Risques',
-            tasks: [
-              {
-                id: 't-demo-1',
-                type: 'tache',
-                taskOrMilestone: 'tache',
-                activity: 'Audit technique initial',
-                phase: 'AVANT PROJET',
-                name: 'Instabilité potentielle des serveurs d\'hébergement',
-                startDate: '2026-06-01',
-                endDate: '2026-06-30',
-                status: 'En cours',
-                assignee: 'Jean-Marc D.',
-                responsabilite: 'Administrateur Systèmes',
-                livrable: 'Diagnostic de charge validé',
-                dateIdentification: '2026-06-09',
-                declarePar: 'Michael K.',
-                riskStatus: 'en traitement',
-                nature: 'technologie / technique',
-                probabilite: 'probable',
-                gravite: 'grave',
-                criticite: 'critique',
-                consequence: 'délai',
-                tendance: 'stable',
-                actionPreventive: 'Mise en place de serveurs de redondance à chaud.',
-                actionCorrective: 'Basculement automatique DNS en cas de panne.',
-                dateResolution: '',
-                resolutionFinale: '',
-                commentaire: 'Le prestataire réseau effectue un audit de sécurité supplémentaire.'
-              },
-              {
-                id: 't-demo-2',
-                type: 'tache',
-                taskOrMilestone: 'tache',
-                activity: 'Plan d\'achat de licences',
-                phase: 'CONCEPTION',
-                name: 'Fluctuations des coûts des licences logicielles',
-                startDate: '2026-06-10',
-                endDate: '2026-08-15',
-                status: 'À faire',
-                assignee: 'Sophie L.',
-                responsabilite: 'Directrice Financière',
-                livrable: 'Budget prévisionnel ajusté',
-                dateIdentification: '2026-06-12',
-                declarePar: 'Sophie L.',
-                riskStatus: 'bloqué',
-                nature: 'economique / financier',
-                probabilite: 'très probable',
-                gravite: 'catastrophique',
-                criticite: 'tres critique',
-                consequence: 'cout',
-                tendance: 'hausse',
-                actionPreventive: 'Négociation de contrats pluriannuels à tarifs bloqués.',
-                actionCorrective: 'Recours à des alternatives open-source.',
-                dateResolution: '',
-                resolutionFinale: '',
-                commentaire: 'Dépassement critique constaté. Risque de rupture d\'approvisionnement.'
-              },
-              {
-                id: 't-demo-3',
-                type: 'jalon',
-                taskOrMilestone: 'jalon',
-                activity: 'Validation conformité légale',
-                phase: 'PLANIFICATION',
-                name: 'Retards réglementaires sur la conformité RGPD',
-                startDate: '2026-07-20',
-                endDate: '2026-07-20',
-                status: 'Terminé',
-                assignee: 'Marc-Antoine K.',
-                responsabilite: 'Délégué à la Protection des Données',
-                livrable: 'Registre RGPD validé',
-                dateIdentification: '2026-06-15',
-                declarePar: 'Marc-Antoine K.',
-                riskStatus: 'traité',
-                nature: 'légal /juridique',
-                probabilite: 'peu probable',
-                gravite: 'majeur',
-                criticite: 'modéré',
-                consequence: 'qualité',
-                tendance: 'baisse',
-                actionPreventive: 'Audits internes bi-hebdomadaires.',
-                actionCorrective: 'Externalisation de la validation légale.',
-                dateResolution: '2026-07-20',
-                resolutionFinale: 'Validation complète par le cabinet d\'avocats conseil.',
-                commentaire: 'Dossier clos avec succès.'
-              },
-              {
-                id: 't-demo-4',
-                type: 'tache',
-                taskOrMilestone: 'tache',
-                activity: 'Ateliers de formation interne',
-                phase: 'EXÉCUTION & SUIVI',
-                name: 'Résistance interne au changement organisationnel',
-                startDate: '2026-07-01',
-                endDate: '2026-12-31',
-                status: 'En cours',
-                assignee: 'Awa C.',
-                responsabilite: 'Responsable Conduite du Changement',
-                livrable: 'Plan de formation déployé',
-                dateIdentification: '2026-06-18',
-                declarePar: 'Awa C.',
-                riskStatus: 'en traitement',
-                nature: 'socio culturel',
-                probabilite: 'probable',
-                gravite: 'grave',
-                criticite: 'critique',
-                consequence: 'qualité',
-                tendance: 'stable',
-                actionPreventive: 'Ateliers de co-construction et communication transparente.',
-                actionCorrective: 'Mise en place de référents par département.',
-                dateResolution: '',
-                resolutionFinale: '',
-                commentaire: 'Bonne adhésion globale sur les premiers ateliers pilotes.'
-              }
-            ]
-          }
-        ]
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const csvPlanInputRef = useRef<HTMLInputElement>(null);
+  const csvRaciInputRef = useRef<HTMLInputElement>(null);
+  const fileHandleRef = useRef<any>(null);
+  const [csvMenuOpen, setCsvMenuOpen] = useState<
+    'slidebar-import' | 'slidebar-export' | 'header-import' | 'header-export' | null
+  >(null);
+
+  // Homepage section scroll-spy & horizontal centering in navbar
+  const [activeHomeSection, setActiveHomeSection] = useState<string>(
+    'section-presentation'
+  );
+  const homeNavScrollRef = useRef<HTMLDivElement>(null);
+  const homeNavBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useEffect(() => {
+    if (activeTab !== 'accueil') return;
+
+    const sectionIds = [
+      'section-presentation',
+      'section-utilisation',
+      'section-documents',
+      'section-cibles',
+      'section-offres',
+      'section-methodologie',
+      'section-sauvegarde',
+      'section-credits'
+    ];
+
+    const detectActiveSection = () => {
+      const scrollY = window.scrollY || window.pageYOffset;
+      const viewportHeight = window.innerHeight;
+      const docHeight = document.documentElement.scrollHeight;
+
+      if (scrollY < 50) {
+        setActiveHomeSection('section-presentation');
+        return;
       }
-    ] 
-  }
-];
 
-const STANDARD_PHASES = ['AVANT PROJET', 'CONCEPTION', 'PLANIFICATION', 'EXÉCUTION & SUIVI', 'CLÔTURE'];
+      if (scrollY + viewportHeight >= docHeight - 40) {
+        setActiveHomeSection('section-credits');
+        return;
+      }
 
-const defaultTaskForm: TaskItem = {
-  id: '',
-  name: '',
-  startDate: '2026-06-01',
-  endDate: '2026-06-30',
-  actualStartDate: '',
-  actualEndDate: '',
-  status: 'À faire',
-  assignee: '',
-  responsabilite: '',
-  livrable: '',
-  validated: false,
-  antecedent: '—',
-  type: 'tache',
-  taskOrMilestone: 'tache',
-  activity: '',
-  phase: 'AVANT PROJET',
-  dateIdentification: '2026-06-09',
-  declarePar: '',
-  riskStatus: 'nouveau',
-  nature: 'politique/ administratif',
-  probabilite: 'probable',
-  gravite: 'majeur',
-  criticite: 'modéré',
-  consequence: 'délai',
-  tendance: 'stable',
-  actionPreventive: '',
-  actionCorrective: '',
-  dateResolution: '',
-  resolutionFinale: '',
-  commentaire: ''
-};
+      const readingLine = Math.min(200, viewportHeight * 0.28);
+      let currentId = sectionIds[0];
 
-interface ErrorBoundaryProps {
-  children: React.ReactNode;
-}
-
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
-
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error };
-  }
-  override componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("ErrorBoundary caught an error", error, errorInfo);
-  }
-  override render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-6 bg-red-50 text-red-800 rounded-xl border border-red-200 m-4">
-          <h3 className="font-bold text-lg mb-2">Une erreur est survenue lors de l'affichage du module</h3>
-          <p className="text-xs font-mono mb-4">{this.state.error?.toString()}</p>
-          <button 
-            onClick={() => {
-              localStorage.clear();
-              window.location.reload();
-            }}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition"
-          >
-            Réinitialiser complètement l'application
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-interface KanbanCardProps {
-  task: TaskItem;
-  borderColor: string;
-  onDragStart?: (e: React.DragEvent, task: TaskItem) => void;
-}
-
-const KanbanCard: React.FC<KanbanCardProps> = ({ task, borderColor, onDragStart }) => (
-  <div 
-    draggable={!task.isReadOnly}
-    onDragStart={(e) => onDragStart && onDragStart(e, task)}
-    className={`bg-white rounded-xl shadow-sm border-t-4 ${borderColor} border border-gray-200 p-4 flex flex-col space-y-3 mb-4 transition-all ${!task.isReadOnly ? 'cursor-grab active:cursor-grabbing hover:shadow-md' : 'opacity-80 cursor-not-allowed'}`}
-  >
-    <div className="flex justify-between items-start">
-       <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{(task.taskOrMilestone || task.type) === 'jalon' ? 'Jalon' : 'Risque'}</span>
-       <div className="flex space-x-1">
-          {(task.taskOrMilestone || task.type) === 'jalon' ? <span className="bg-orange-100 text-orange-700 text-[9px] px-1.5 py-0.5 rounded font-bold flex items-center"><Star className="w-2.5 h-2.5 mr-1 fill-current"/> JALON</span> : null}
-          {task.riskStatus === 'bloqué' ? <span className="bg-red-100 text-red-700 text-[9px] px-1.5 py-0.5 rounded font-bold flex items-center"><AlertTriangle className="w-2.5 h-2.5 mr-1"/> BLOQUÉ</span> : null}
-       </div>
-    </div>
-    <div className="inline-block bg-sky-50 text-sky-700 text-[9px] px-2 py-0.5 rounded font-bold uppercase w-max">{task.phase || ''}</div>
-    <h4 className="font-bold text-gray-800 text-xs leading-snug">{task.name || ''}</h4>
-
-    <div className="bg-gray-50 rounded p-2 text-[11px]">
-      <div className="flex justify-between items-center text-gray-500">
-        <span className="flex items-center"><Calendar className="w-3 h-3 mr-1"/> Identification</span>
-        <span className="font-semibold text-gray-700">
-          {task.dateIdentification || task.startDate ? new Date(task.dateIdentification || task.startDate).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'numeric'}) : ''}
-        </span>
-      </div>
-    </div>
-
-    <div className="flex items-center text-[11px] text-gray-500 pt-1 border-t border-gray-100 mt-1">
-      <div className="w-5 h-5 rounded-full bg-sky-100 text-sky-800 flex items-center justify-center font-bold text-[9px] mr-1.5 border border-sky-200">
-        {(task.assignee || 'N').substring(0, 2).toUpperCase()}
-      </div>
-      <span className="truncate max-w-[130px] font-medium" title={task.assignee || ''}>{task.assignee || 'Non assigné'}</span>
-    </div>
-  </div>
-);
-
-interface InlineEditState {
-  taskId: string;
-  dossierId: string;
-  axeId: string;
-  projectId: string;
-  phase: string;
-  data: TaskItem;
-}
-
-function MainApp() {
-  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cnra_activeTab') || 'accueil'); 
-  const [isExploring, setIsExploring] = useState(() => localStorage.getItem('cnra_isExploring') === 'true');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-
-  const [isCreatingDossier, setIsCreatingDossier] = useState(false);
-  const [newDossierForm, setNewDossierForm] = useState({
-    name: 'Nouveau Portefeuille d\'expérimentation',
-    type: 'PSD', 
-    startYear: 2026,
-    horizonYears: 10,
-    institution: 'INSTITUTION PAR DÉFAUT',
-    description: 'Espace d\'expérimentation libre pour simuler et créer un portefeuille avec la méthodologie.'
-  });
-
-  const TODAY = useMemo(() => new Date('2026-05-28'), []);
-
-  // Extraction et parsing ultra-robuste pour éviter les écrans blancs
-  const [data, setData] = useState<DossierItem[]>(() => {
-    try {
-      const savedData = localStorage.getItem('cnra_data');
-      if (savedData) {
-        const parsed = JSON.parse(savedData);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+      for (const id of sectionIds) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.top <= readingLine) {
+          currentId = id;
         }
       }
-      return initialData;
-    } catch {
-      return initialData;
-    }
-  });
 
-  const [activeDossierId, setActiveDossierId] = useState<string>(() => {
-    const savedId = localStorage.getItem('cnra_activeDossierId');
-    if (savedId) return savedId;
-    return initialData[0]?.id || '';
-  });
+      setActiveHomeSection(currentId);
+    };
 
-  useEffect(() => { localStorage.setItem('cnra_data', JSON.stringify(data)); }, [data]);
-  useEffect(() => { localStorage.setItem('cnra_activeDossierId', activeDossierId); }, [activeDossierId]);
-  useEffect(() => { localStorage.setItem('cnra_activeTab', activeTab); }, [activeTab]);
-  useEffect(() => { localStorage.setItem('cnra_isExploring', String(isExploring)); }, [isExploring]);
+    detectActiveSection();
+    window.addEventListener('scroll', detectActiveSection, { passive: true });
+    window.addEventListener('resize', detectActiveSection, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', detectActiveSection);
+      window.removeEventListener('resize', detectActiveSection);
+    };
+  }, [activeTab]);
 
-  const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string | null; step: number }>({ id: null, step: 0 });
-
-  // Variables de filtrage transversales
-  const [filterDashboardAxe, setFilterDashboardAxe] = useState('FULL');
-  const [filterDashboardProj, setFilterDashboardProj] = useState('FULL');
-  const [filterProcessusAxe, setFilterProcessusAxe] = useState('FULL');
-  const [filterProcessusProj, setFilterProcessusProj] = useState('FULL');
-  const [filterKanbanAxe, setFilterKanbanAxe] = useState('FULL');
-  const [filterKanbanProj, setFilterKanbanProj] = useState('FULL');
-  const [filterGanttAxe, setFilterGanttAxe] = useState('FULL');
-  const [filterGanttProj, setFilterGanttProj] = useState('FULL');
-  const [filterMatriceAxe, setFilterMatriceAxe] = useState('FULL');
-  const [filterMatriceProj, setFilterMatriceProj] = useState('FULL');
-
-  const [ganttStartMonth, setGanttStartMonth] = useState('2026-01');
-  const [ganttEndMonth, setGanttEndMonth] = useState('2028-12');
-  const [ganttViewMode, setGanttViewMode] = useState('mois');
-
-  // Sécurité anticrash lors du changement d'ID ou de dossier supprimé
-  const activeDossier = useMemo(() => {
-    return data.find(d => d.id === activeDossierId) || data[0] || initialData[0];
-  }, [data, activeDossierId]);
-
-  const currentInstitution = useMemo(() => {
-    if (isExploring && activeDossier) {
-      return activeDossier.institution || 'ENTREPRISE';
-    }
-    return 'ENTREPRISE';
-  }, [isExploring, activeDossier]);
-
-  // Synchronisation dynamique de l'échelle temporelle pour le Gantt
+  // Horizontally center the active section title in the navbar whenever activeHomeSection changes
   useEffect(() => {
-    if (activeDossier) {
-      const startYear = activeDossier.psdYear || parseInt(activeDossier.horizonPlan?.split('-')[0]) || 2026;
-      const length = Number(activeDossier.horizonYears) || 3;
-      const endYear = startYear + length - 1; 
-      setGanttStartMonth(`${startYear}-01`);
-      setGanttEndMonth(`${endYear}-12`);
-    }
-  }, [activeDossierId, activeDossier]);
+    if (activeTab !== 'accueil') return;
+    const navContainer = homeNavScrollRef.current;
+    const activeBtn = homeNavBtnRefs.current[activeHomeSection];
+    if (!navContainer || !activeBtn) return;
 
-  const allProjects = useMemo(() => {
-    const projects: ProjectItem[] = [];
-    if (activeDossier && Array.isArray(activeDossier.axes)) {
-      activeDossier.axes.forEach(axe => {
-        if (axe && Array.isArray(axe.projects)) {
-          axe.projects.forEach(proj => {
-            if (proj) {
-              projects.push({ 
-                ...proj, 
-                dossierId: activeDossier.id,
-                dossierName: activeDossier.name, 
-                axeName: axe.name, 
-                axeId: axe.id, 
-                isReadOnly: !!activeDossier.isReadOnly,
-                tasks: Array.isArray(proj.tasks) ? proj.tasks : []
-              });
-            }
+    const centerActiveButton = () => {
+      const navRect = navContainer.getBoundingClientRect();
+      const btnRect = activeBtn.getBoundingClientRect();
+      const currentScrollLeft = navContainer.scrollLeft;
+      const btnCenterInScroll =
+        btnRect.left - navRect.left + currentScrollLeft + btnRect.width / 2;
+      const targetScrollLeft = btnCenterInScroll - navContainer.clientWidth / 2;
+      navContainer.scrollTo({
+        left: Math.max(0, targetScrollLeft),
+        behavior: 'smooth'
+      });
+    };
+
+    const rafId = requestAnimationFrame(centerActiveButton);
+    return () => cancelAnimationFrame(rafId);
+  }, [activeHomeSection, activeTab, language]);
+
+  // Hydrate isolated workspace from IndexedDB strictly for the authenticated Regular User (UID)
+  // Neither other users nor the Super Administrator can access another user's programmes or profile.
+  const [hydratedUid, setHydratedUid] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    // If not authenticated or if Super Administrator, clear active storage UID and reset in-memory workspace
+    if (!authUser || isSuperAdminEmail(authUser.email)) {
+      setActiveUserStorageUid(null);
+      setActiveExportUserUid(null);
+      setHydratedUid(null);
+      setUserProfile({ ...defaultUserProfile });
+      setDossiers(JSON.parse(JSON.stringify(initialDossiers)));
+      setActiveDossierId(initialDossiers[0].id);
+      setCustomDocsData({ ...defaultCustomDocsData });
+      return;
+    }
+
+    const currentUid = authUser.uid;
+    setActiveUserStorageUid(currentUid);
+    setActiveExportUserUid(currentUid);
+    void initExportStorage();
+
+    let cancelled = false;
+    loadAppStateFromIDB(currentUid).then(saved => {
+      if (cancelled) return;
+      if (saved) {
+        if (saved.userProfile) {
+          setUserProfile(saved.userProfile);
+        } else {
+          setUserProfile({
+            ...defaultUserProfile,
+            fullName:
+              authUser.displayName ||
+              authUser.email?.split('@')[0] ||
+              'Utilisateur FAAB RISK',
+            email: authUser.email || ''
           });
         }
-      });
-    }
-    return projects;
-  }, [activeDossier]);
-
-  const allTasks = useMemo(() => {
-    const tasks: TaskItem[] = [];
-    allProjects.forEach(proj => {
-      if (proj && Array.isArray(proj.tasks)) {
-        proj.tasks.forEach(task => {
-          if (task) {
-            tasks.push({ 
-              ...task, 
-              projectName: proj.name,
-              projectId: proj.id,
-              axeId: proj.axeId,
-              dossierId: proj.dossierId,
-              isReadOnly: !!proj.isReadOnly
-            });
-          }
-        });
-      }
-    });
-    return tasks;
-  }, [allProjects]);
-
-  const dashProjects = useMemo(() => {
-    let filtered = allProjects;
-    if (filterDashboardAxe !== 'FULL') filtered = filtered.filter(p => p.axeId === filterDashboardAxe);
-    if (filterDashboardProj !== 'FULL') filtered = filtered.filter(p => p.id === filterDashboardProj);
-    return filtered;
-  }, [allProjects, filterDashboardAxe, filterDashboardProj]);
-
-  const dashTasks = useMemo(() => {
-    const validIds = dashProjects.map(p => p.id);
-    return allTasks.filter(t => validIds.includes(t.projectId || ''));
-  }, [allTasks, dashProjects]);
-
-  const cpmDashboardData = useMemo(() => {
-    if (dashTasks.length === 0) return "Aucun risque planifié";
-    let minStart = Infinity;
-    let maxEnd = -Infinity;
-    dashTasks.forEach(t => {
-      const sd = new Date(t.dateIdentification || t.startDate).getTime();
-      const ed = new Date(t.dateResolution || t.endDate).getTime();
-      if (!isNaN(sd) && !isNaN(ed)) {
-        if (sd < minStart) minStart = sd;
-        if (ed > maxEnd) maxEnd = ed;
-      }
-    });
-    if (minStart === Infinity) return "Dates manquantes";
-    const diffDays = Math.ceil((maxEnd - minStart) / (1000 * 60 * 60 * 24)) + 1;
-    if (diffDays >= 365) {
-      return `${(diffDays / 365).toFixed(1)} Ans (${diffDays} j) d'horizon`;
-    }
-    return `${diffDays} Jours de traitement global`;
-  }, [dashTasks]);
-
-  const stats = useMemo(() => {
-    const total = dashTasks.length;
-    const completed = dashTasks.filter(t => t.riskStatus === 'traité').length;
-    const blocked = dashTasks.filter(t => t.riskStatus === 'bloqué').length;
-    const inProgress = dashTasks.filter(t => t.riskStatus === 'en traitement').length;
-    const todo = dashTasks.filter(t => t.riskStatus === 'nouveau').length;
-    
-    let currentlyDelayedCount = 0;
-
-    dashTasks.forEach(t => {
-      const startD = t.startDate ? new Date(t.startDate) : null;
-      const endD = t.endDate ? new Date(t.endDate) : null;
-      
-      const isAFaire = t.riskStatus === 'nouveau';
-      const isTermine = t.riskStatus === 'traité';
-
-      const hasValidStart = startD && !isNaN(startD.getTime());
-      const hasValidEnd = endD && !isNaN(endD.getTime());
-
-      let isDelayed = false;
-      if (!isTermine) {
-        if (hasValidEnd && TODAY > endD) {
-          isDelayed = true; 
-        } else if (hasValidStart && TODAY > startD && isAFaire) {
-          isDelayed = true; 
+        if (Array.isArray(saved.dossiers) && saved.dossiers.length > 0) {
+          setDossiers(saved.dossiers);
+        } else {
+          setDossiers(JSON.parse(JSON.stringify(initialDossiers)));
         }
+        if (saved.activeDossierId) {
+          setActiveDossierId(saved.activeDossierId);
+        } else {
+          setActiveDossierId(initialDossiers[0].id);
+        }
+        if (saved.language) setLanguage(saved.language);
+        if (saved.currency) setCurrency(saved.currency);
+        if (saved.theme) setTheme(saved.theme);
+        if (saved.lastJsonFileName) setLastJsonFileName(saved.lastJsonFileName);
+        if (saved.customDocsData) {
+          setCustomDocsData({
+            ...defaultCustomDocsData,
+            ...saved.customDocsData
+          });
+        } else {
+          setCustomDocsData({ ...defaultCustomDocsData });
+        }
+      } else {
+        // First login for this specific Regular User UID -> fresh isolated workspace
+        const freshDossiers: Dossier[] = JSON.parse(
+          JSON.stringify(initialDossiers)
+        );
+        const freshProfile: UserProfile = {
+          ...defaultUserProfile,
+          fullName:
+            authUser.displayName ||
+            authUser.email?.split('@')[0] ||
+            'Utilisateur FAAB RISK',
+          email: authUser.email || ''
+        };
+        setUserProfile(freshProfile);
+        setDossiers(freshDossiers);
+        setActiveDossierId(freshDossiers[0].id);
+        setCustomDocsData({ ...defaultCustomDocsData });
       }
-      if (isDelayed) {
-        currentlyDelayedCount++;
-      }
+      setHydratedUid(currentUid);
     });
 
-    return { 
-      total, 
-      completed, 
-      blocked, 
-      inProgress, 
-      todo,
-      delayed: currentlyDelayedCount
+    return () => {
+      cancelled = true;
     };
-  }, [dashTasks, TODAY]);
+  }, [authUser?.uid, authUser?.email]);
 
-  // CALCUL STATISTIQUES AVANCÉES DU PORTFOLIO
-  const computedDashboardStats = useMemo(() => {
-    const criticiteCounts: Record<string, number> = { 'modéré': 0, 'critique': 0, 'tres critique': 0 };
-    const natureCounts: Record<string, number> = {};
-    DROPDOWNS.nature.forEach(n => { natureCounts[n] = 0; });
-    const consequenceCounts: Record<string, number> = { 'cout': 0, 'délai': 0, 'qualité': 0 };
-    const tendanceCounts: Record<string, number> = { 'stable': 0, 'hausse': 0, 'baisse': 0 };
-    const graviteCounts: Record<string, number> = { 'mineur': 0, 'majeur': 0, 'grave': 0, 'catastrophique': 0 };
-    const probabiliteCounts: Record<string, number> = { 'improbable': 0, 'peu probable': 0, 'probable': 0, 'très probable': 0 };
+  // Auto-persist to IndexedDB (strictly scoped to the authenticated Regular User UID) & sync dark mode
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    document.documentElement.lang = language === 'EN' ? 'en' : 'fr';
 
-    dashTasks.forEach(t => {
-      if (!t) return;
-      // 1. Criticité
-      const crit = (t.criticite || 'modéré').toLowerCase().trim();
-      if (crit.includes('tres') || crit.includes('très') || crit.includes('tres critique')) {
-        criticiteCounts['tres critique']++;
-      } else if (crit.includes('critique')) {
-        criticiteCounts['critique']++;
-      } else {
-        criticiteCounts['modéré']++;
-      }
+    if (
+      !isHydrated ||
+      !authUser ||
+      isSuperAdminEmail(authUser.email) ||
+      hydratedUid !== authUser.uid
+    ) {
+      return;
+    }
 
-      // 2. Nature du Risque
-      const nat = (t.nature || '').toLowerCase().trim();
-      if (natureCounts[nat] !== undefined) {
-        natureCounts[nat]++;
-      } else {
-        const found = DROPDOWNS.nature.find(n => n.toLowerCase().trim() === nat);
-        if (found) {
-          natureCounts[found] = (natureCounts[found] || 0) + 1;
+    void saveAppStateToIDB(
+      {
+        userProfile,
+        dossiers,
+        activeDossierId,
+        language,
+        currency,
+        theme,
+        lastJsonFileName,
+        activeTab,
+        customDocsData
+      },
+      authUser.uid
+    );
+  }, [
+    isHydrated,
+    hydratedUid,
+    authUser,
+    userProfile,
+    dossiers,
+    activeDossierId,
+    language,
+    currency,
+    theme,
+    lastJsonFileName,
+    activeTab,
+    customDocsData
+  ]);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Firebase Auth State Listener (Strictly driven by Firebase SDK)
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      if (user) {
+        const mapped = mapFirebaseSdkUser(user);
+        setAuthUser(mapped);
+        void syncFirebaseUserToRegistry(mapped);
+
+        const alreadyPinVerified = isSessionPinVerifiedForUser(mapped.uid);
+        setIsPinVerified(alreadyPinVerified);
+
+        if (alreadyPinVerified) {
+          // Dissociation stricte : le Super Admin n'a accès qu'à 'super_admin' (ou 'accueil'), l'utilisateur qu'aux onglets utilisateurs
+          if (isSuperAdminEmail(mapped.email)) {
+            setActiveTab(prev => (prev === 'accueil' ? 'accueil' : 'super_admin'));
+          } else {
+            setActiveTab(prev => (prev === 'super_admin' ? 'projects' : prev));
+          }
+        } else {
+          // Demander systématiquement le Code PIN (défaut "0000") ou Touch ID / Face ID après l'authentification Google
+          setSuperAdminAuthModalStep('pin_and_biometric');
+          setIsSuperAdminAuthModalOpen(true);
         }
-      }
 
-      // 3. Conséquence si avéré
-      const cons = (t.consequence || '').toLowerCase().trim();
-      if (cons.includes('cout') || cons.includes('coût')) consequenceCounts['cout']++;
-      else if (cons.includes('délai') || cons.includes('delai')) consequenceCounts['délai']++;
-      else if (cons.includes('qualité') || cons.includes('qualite')) consequenceCounts['qualité']++;
-
-      // 4. Tendance d'évolution
-      const tend = (t.tendance || 'stable').toLowerCase().trim();
-      if (tendanceCounts[tend] !== undefined) {
-        tendanceCounts[tend]++;
+        try {
+          localStorage.setItem(
+            'faab_auth_session',
+            JSON.stringify({
+              uid: user.uid,
+              authenticatedAt: Date.now()
+            })
+          );
+        } catch {}
+      } else {
+        setAuthUser(null);
+        setIsPinVerified(false);
+        setSessionPinVerifiedForUser(null, false);
+        setIsDeviceLocked(false);
+        setIsSuperAdminAuthModalOpen(false);
+        setActiveTab('accueil');
+        try {
+          localStorage.removeItem('faab_auth_session');
+        } catch {}
       }
-
-      // 5. Gravité (Impact)
-      const grav = (t.gravite || 'mineur').toLowerCase().trim();
-      if (graviteCounts[grav] !== undefined) {
-        graviteCounts[grav]++;
-      }
-
-      // 6. Probabilité
-      const prob = (t.probabilite || 'probable').toLowerCase().trim();
-      if (probabiliteCounts[prob] !== undefined) {
-        probabiliteCounts[prob]++;
-      }
+      setIsAuthLoading(false);
     });
+    return () => unsubscribe();
+  }, []);
 
-    // Formats d'objets pour Recharts
-    const criticitePie = [
-      { name: 'Modéré', value: criticiteCounts['modéré'], color: '#3b82f6' },
-      { name: 'Critique', value: criticiteCounts['critique'], color: '#f59e0b' },
-      { name: 'Très critique', value: criticiteCounts['tres critique'], color: '#ef4444' }
-    ];
-
-    const natureBar = Object.keys(natureCounts).map((key, idx) => ({
-      name: key.split('/')[0].trim(),
-      fullname: key,
-      'Risques': natureCounts[key] || 0,
-      color: ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'][idx % 6]
-    }));
-
-    const consequencePie = [
-      { name: 'Coût', value: consequenceCounts['cout'], color: '#ef4444' },
-      { name: 'Délai', value: consequenceCounts['délai'], color: '#0ea5e9' },
-      { name: 'Qualité', value: consequenceCounts['qualité'], color: '#10b981' }
-    ];
-
-    const tendancePie = [
-      { name: 'Stable', value: tendanceCounts['stable'], color: '#94a3b8' },
-      { name: 'Hausse', value: tendanceCounts['hausse'], color: '#ef4444' },
-      { name: 'Baisse', value: tendanceCounts['baisse'], color: '#10b981' }
-    ];
-
-    const graviteBar = [
-      { name: 'Mineur', 'Nombre': graviteCounts['mineur'], color: '#10b981' },
-      { name: 'Majeur', 'Nombre': graviteCounts['majeur'], color: '#3b82f6' },
-      { name: 'Grave', 'Nombre': graviteCounts['grave'], color: '#f59e0b' },
-      { name: 'Catastrophique', 'Nombre': graviteCounts['catastrophique'], color: '#dc2626' }
-    ];
-
-    const probabiliteBar = [
-      { name: 'Improbable', 'Fréquence': probabiliteCounts['improbable'], color: '#94a3b8' },
-      { name: 'Peu probable', 'Fréquence': probabiliteCounts['peu probable'], color: '#3b82f6' },
-      { name: 'Probable', 'Fréquence': probabiliteCounts['probable'], color: '#f59e0b' },
-      { name: 'Très probable', 'Fréquence': probabiliteCounts['très probable'], color: '#ef4444' }
-    ];
-
-    return { criticitePie, natureBar, consequencePie, tendancePie, graviteBar, probabiliteBar };
-  }, [dashTasks]);
-
-  const bottlenecks = useMemo(() => {
-    const list: Array<TaskItem & { reasons: string[] }> = [];
-    dashTasks.forEach(t => {
-      let isBottleneck = false;
-      const reasons: string[] = [];
-
-      if ((t.riskStatus === 'nouveau' || t.riskStatus === 'bloqué') && t.criticite === 'tres critique') {
-        isBottleneck = true;
-        reasons.push("Risque critique non résolu");
+  // Préchargement asynchrone en tâche de fond (Idle Prefetching) des modules selon le rôle exclusif
+  useEffect(() => {
+    if (!isHydrated || !authUser) return;
+    const preloadModules = () => {
+      if (isSuperAdminEmail(authUser.email)) {
+        void import('./components/SuperAdminDashboardView');
+      } else {
+        void import('./components/OperationalMatrices');
+        void import('./components/GanttAndTreeView');
+        void import('./components/CategoriesActorsView');
+        void import('./components/FicheTechniquePages');
+        void import('./components/DocumentGeneratorView');
+        void import('./components/RiskViews');
       }
+    };
+    if (typeof (window as any).requestIdleCallback === 'function') {
+      const id = (window as any).requestIdleCallback(preloadModules, {
+        timeout: 2000
+      });
+      return () => (window as any).cancelIdleCallback?.(id);
+    } else {
+      const timer = setTimeout(preloadModules, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isHydrated, authUser]);
 
-      if (isBottleneck) {
-        const matchingProj = dashProjects.find(p => p.id === t.projectId);
-        list.push({
-          ...t,
-          projectName: matchingProj ? matchingProj.name : "Projet Inconnu",
-          reasons
-        });
+  // Lorsqu'on clique sur "Se connecter", Google Sign-In authentifie EN PREMIER, puis ouvre immédiatement le popup Code PIN (défaut "0000") / Touch ID / Face ID
+  const handleGoogleSignIn = async () => {
+    // Si déjà authentifié par Google mais en attente de validation du Code PIN, ré-afficher le popup PIN
+    if (authUser && !isPinVerified) {
+      setSuperAdminAuthModalStep('pin_and_biometric');
+      setIsSuperAdminAuthModalOpen(true);
+      return;
+    }
+
+    try {
+      setIsSigningIn(true);
+      googleProvider.setCustomParameters({ prompt: 'select_account' });
+      const res = await signInWithPopup(auth, googleProvider);
+      if (res.user) {
+        const mapped = mapFirebaseSdkUser(res.user);
+        setAuthUser(mapped);
+        void syncFirebaseUserToRegistry(mapped);
+        // Exiger la saisie du Code PIN (par défaut "0000") ou Touch ID / Face ID à chaque nouvelle connexion Google
+        setIsPinVerified(false);
+        setSessionPinVerifiedForUser(mapped.uid, false);
+        setSuperAdminAuthModalStep('pin_and_biometric');
+        setIsSuperAdminAuthModalOpen(true);
       }
-    });
-    return list;
-  }, [dashTasks, dashProjects]);
+    } catch (err: any) {
+      const code = err?.code || 'auth/unknown-error';
+      const msg = err?.message || 'Erreur lors de la connexion Google Firebase.';
+      setAuthErrorCode(code);
+      setAuthErrorMessage(msg);
+      if (
+        code !== 'auth/popup-closed-by-user' &&
+        code !== 'auth/cancelled-popup-request'
+      ) {
+        setIsAuthHelpModalOpen(true);
+      }
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
 
-  const globalProgress = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+  const handleDirectGooglePopupRetry = handleGoogleSignIn;
 
-  const projectStats = useMemo(() => {
-    const pStats: Array<{
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.warn('Sign Out notice:', err);
+    } finally {
+      try {
+        localStorage.removeItem('faab_auth_session');
+      } catch {}
+      setAuthUser(null);
+      setIsPinVerified(false);
+      setSessionPinVerifiedForUser(null, false);
+      setIsDeviceLocked(false);
+      setIsSuperAdminAuthModalOpen(false);
+      setIsSlidebarOpen(false);
+      setActiveTab('accueil');
+      showToast(
+        language === 'EN'
+          ? 'You have been logged out. Please sign in with Google to reconnect.'
+          : 'Vous avez été déconnecté. Authentifiez-vous via Google Sign-In pour vous reconnecter.'
+      );
+    }
+  };
+
+  const activeDossier = useMemo<Dossier>(() => {
+    return dossiers.find(d => d.id === activeDossierId) || dossiers[0];
+  }, [dossiers, activeDossierId]);
+
+  const todayISO = getTodayISO();
+  const t = translations[language] || translations.FR;
+
+  // Filtered Axes & Projects for operational views
+  const filteredAxes = useMemo<Axe[]>(() => {
+    const axes = activeDossier.axes || [];
+    if (filterAxeId === 'ALL') return axes;
+    return axes.filter(a => a.id === filterAxeId);
+  }, [activeDossier, filterAxeId]);
+
+  const availableProjectsInFilter = useMemo<Project[]>(() => {
+    return filteredAxes.flatMap(a => a.projects || []);
+  }, [filteredAxes]);
+
+  const filteredProjects = useMemo<Project[]>(() => {
+    if (filterProjectId === 'ALL') return availableProjectsInFilter;
+    return availableProjectsInFilter.filter(p => p.id === filterProjectId);
+  }, [availableProjectsInFilter, filterProjectId]);
+
+  // Flatten tasks with codes & metrics for Dashboard & Kanban
+  const flatTaskRows = useMemo(() => {
+    const list: Array<{
+      axeId: string;
+      axeName: string;
+      projectId: string;
       projectName: string;
-      shortName: string;
-      total: number;
-      'Traités': number;
-      'En cours': number;
-      'Bloqués': number;
-      'Nouveaux': number;
-      'Critiques': number;
-      progress: number;
+      task: Task;
+      code: string;
+      antecedentCode: string;
+      allProjectTasks: Array<{ id: string; code: string; name: string }>;
+      metrics: ReturnType<typeof computeTaskMetrics>;
     }> = [];
 
-    dashProjects.forEach(proj => {
-      const safeTasks = Array.isArray(proj.tasks) ? proj.tasks : [];
-      const total = safeTasks.length;
-      const completed = safeTasks.filter(t => t.riskStatus === 'traité').length;
-      const inProgress = safeTasks.filter(t => t.riskStatus === 'en traitement').length;
-      const blocked = safeTasks.filter(t => t.riskStatus === 'bloqué').length;
-      const todo = safeTasks.filter(t => t.riskStatus === 'nouveau').length;
-      
-      const delayed = safeTasks.filter(t => t.criticite === 'tres critique' && t.riskStatus !== 'traité').length;
+    filteredAxes.forEach(axe => {
+      (axe.projects || [])
+        .filter(pr => filterProjectId === 'ALL' || pr.id === filterProjectId)
+        .forEach(proj => {
+          const rawTasks = proj.tasks || [];
+          const codeMap = new Map<string, string>();
+          const projectTaskOptions: Array<{
+            id: string;
+            code: string;
+            name: string;
+          }> = [];
 
-      const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-      const shortName = (proj.name || 'Projet Inconnu').replace(/Projet\s*(\d)?\s*:\s*/, '');
+          STANDARD_PHASES.forEach((pName, pIdx) => {
+            const pTasks = rawTasks.filter(tk => tk.phase === pName);
+            pTasks.forEach((tk, tIdx) => {
+              const c = `${tk.type === 'jalon' ? 'J' : 'T'}.${pIdx + 1}.${
+                tIdx + 1
+              }`;
+              codeMap.set(tk.id, c);
+              projectTaskOptions.push({ id: tk.id, code: c, name: tk.name });
+            });
+          });
 
-      pStats.push({ 
-        projectName: proj.name || 'Projet Inconnu', 
-        shortName: shortName,
-        total, 
-        'Traités': completed, 
-        'En cours': inProgress, 
-        'Bloqués': blocked,
-        'Nouveaux': todo, 
-        'Critiques': delayed,
-        progress 
-      });
+          rawTasks.forEach((tk, idx) => {
+            const code =
+              codeMap.get(tk.id) ||
+              `${tk.type === 'jalon' ? 'J' : 'T'}.1.${idx + 1}`;
+            const antCode =
+              tk.antecedent && tk.antecedent !== '—'
+                ? codeMap.get(tk.antecedent) || tk.antecedent
+                : '—';
+            const metrics = computeTaskMetrics(tk, todayISO);
+            list.push({
+              axeId: axe.id,
+              axeName: axe.name,
+              projectId: proj.id,
+              projectName: proj.name,
+              task: tk,
+              code,
+              antecedentCode: antCode,
+              allProjectTasks: projectTaskOptions.filter(o => o.id !== tk.id),
+              metrics
+            });
+          });
+        });
     });
-    return pStats;
-  }, [dashProjects]);
 
-  interface GanttColumn {
-    label: string;
-    parentLabel: string;
-    start: Date;
-    end: Date;
+    return list;
+  }, [filteredAxes, filterProjectId, todayISO]);
+
+  // Global Dossier KPIs
+  const allDossierTasks = useMemo(() => {
+    return (activeDossier.axes || []).flatMap(a =>
+      (a.projects || []).flatMap(p => p.tasks || [])
+    );
+  }, [activeDossier]);
+
+  const totalBudgetFCFA = useMemo(
+    () => allDossierTasks.reduce((acc, tk) => acc + (Number(tk.budget) || 0), 0),
+    [allDossierTasks]
+  );
+
+  const statusCounts = useMemo(() => {
+    const counts = {
+      Terminé: 0,
+      'En cours': 0,
+      'À faire': 0,
+      Bloqué: 0
+    };
+    allDossierTasks.forEach(tk => {
+      const st = computeTaskMetrics(tk, todayISO).effectiveStatus;
+      counts[st] = (counts[st] || 0) + 1;
+    });
+    return counts;
+  }, [allDossierTasks, todayISO]);
+
+  const completionPct =
+    allDossierTasks.length > 0
+      ? Math.round((statusCounts.Terminé / allDossierTasks.length) * 100)
+      : 0;
+
+  const activeRaciContext = useMemo(
+    () => resolveProgramRaciContext(activeDossier, userProfile),
+    [activeDossier, userProfile]
+  );
+
+  if (!isHydrated || isAuthLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white p-6">
+        <div className="flex flex-col items-center gap-5">
+          <div className="p-2 flex items-center justify-center">
+            <AppLogo className="w-64 h-64 sm:w-80 sm:h-80 md:w-96 md:h-96 animate-pulse drop-shadow-[0_0_45px_rgba(234,88,12,0.85)]" />
+          </div>
+          <div className="flex items-center gap-2.5 text-xs sm:text-sm font-extrabold tracking-widest uppercase text-[#90D5FF] text-center">
+            <div className="w-4 h-4 border-2 border-[#90D5FF] border-t-transparent rounded-full animate-spin" />
+            <span>
+              {!isHydrated
+                ? 'Hydratation IndexedDB FAAB RISK en cours...'
+                : language === 'EN'
+                ? 'Verifying secure session...'
+                : 'Vérification de la session sécurisée...'}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  const ganttColumns = useMemo(() => {
-    const startStr = ganttStartMonth || '2026-01';
-    const endStr = ganttEndMonth || '2028-12';
-    const [sYear, sMonth] = startStr.split('-').map(Number);
-    const [eYear, eMonth] = endStr.split('-').map(Number);
-    if (isNaN(sYear) || isNaN(sMonth) || isNaN(eYear) || isNaN(eMonth)) {
-      return [];
-    }
-    const startDate = new Date(sYear, sMonth - 1, 1);
-    const endDate = new Date(eYear, eMonth, 0); 
-    
-    const cols: GanttColumn[] = [];
-    let curr = new Date(startDate);
-    const maxCols = 100;
+  // Strict security flags:
+  // 1. User must be authenticated via Google Sign-In AND have verified their PIN (or Touch ID / Face ID) AND not have locked the device.
+  // 2. Super Admin ('fabien.frikupgeneration@gmail.com') and Standard Users (all other emails) are strictly dissociated:
+  //    - Super Admin ONLY has access to 'super_admin' (and 'accueil').
+  //    - Standard Users ONLY have access to classic user modules (and NEVER 'super_admin').
+  const isUnlocked = Boolean(authUser && isPinVerified && !isDeviceLocked);
+  const isSuperAdminUnlocked = Boolean(
+    isUnlocked && isSuperAdminEmail(authUser?.email)
+  );
+  const isRegularUserUnlocked = Boolean(
+    isUnlocked && !isSuperAdminEmail(authUser?.email)
+  );
 
-    if (ganttViewMode === 'jour') {
-        while (curr <= endDate && cols.length < maxCols) {
-            cols.push({
-                label: curr.getDate().toString().padStart(2, '0'),
-                parentLabel: curr.toLocaleString('fr-FR', { month: 'short', year: 'numeric' }),
-                start: new Date(curr.getFullYear(), curr.getMonth(), curr.getDate(), 0, 0, 0),
-                end: new Date(curr.getFullYear(), curr.getMonth(), curr.getDate(), 23, 59, 59)
-            });
-            curr = new Date(curr.getFullYear(), curr.getMonth(), curr.getDate() + 1);
-        }
-    } else if (ganttViewMode === 'semaine') {
-        let currWeekStart = new Date(startDate);
-        let weekNum = 1;
-        while (currWeekStart <= endDate && cols.length < maxCols) {
-            const currWeekEnd = new Date(currWeekStart.getFullYear(), currWeekStart.getMonth(), currWeekStart.getDate() + 6, 23, 59, 59);
-            const actualEnd = currWeekEnd > endDate ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59) : currWeekEnd;
-            
-            cols.push({
-                label: `S${weekNum}`,
-                parentLabel: currWeekStart.toLocaleString('fr-FR', { month: 'short', year: 'numeric' }),
-                start: new Date(currWeekStart.getFullYear(), currWeekStart.getMonth(), currWeekStart.getDate(), 0, 0, 0),
-                end: actualEnd
-            });
-            
-            const nextWeekStart = new Date(currWeekStart.getFullYear(), currWeekStart.getMonth(), currWeekStart.getDate() + 7);
-            if (nextWeekStart.getMonth() !== currWeekStart.getMonth()) {
-                weekNum = 1;
-            } else {
-                weekNum++;
-            }
-            currWeekStart = nextWeekStart;
-        }
-    } else if (ganttViewMode === 'mois') {
-        while (curr <= endDate && cols.length < maxCols) {
-            const mEnd = new Date(curr.getFullYear(), curr.getMonth() + 1, 0);
-            cols.push({
-                label: curr.toLocaleString('fr-FR', { month: 'short' }).substring(0,3),
-                parentLabel: curr.getFullYear().toString(),
-                start: new Date(curr.getFullYear(), curr.getMonth(), 1, 0, 0, 0),
-                end: new Date(mEnd.getFullYear(), mEnd.getMonth(), mEnd.getDate(), 23, 59, 59)
-            });
-            curr = new Date(curr.getFullYear(), curr.getMonth() + 1, 1);
-        }
-    } else if (ganttViewMode === 'trimestre') {
-        while (curr <= endDate && cols.length < maxCols) {
-            const q = Math.floor(curr.getMonth() / 3) + 1;
-            const qEnd = new Date(curr.getFullYear(), q * 3, 0);
-            const actualEnd = qEnd > endDate ? endDate : qEnd;
-            cols.push({
-                label: `T${q}`,
-                parentLabel: curr.getFullYear().toString(),
-                start: new Date(curr.getFullYear(), curr.getMonth(), 1, 0, 0, 0),
-                end: new Date(actualEnd.getFullYear(), actualEnd.getMonth(), actualEnd.getDate(), 23, 59, 59)
-            });
-            curr = new Date(curr.getFullYear(), curr.getMonth() + 3, 1);
-        }
-    } else if (ganttViewMode === 'semestre') {
-        while (curr <= endDate && cols.length < maxCols) {
-            const s = Math.floor(curr.getMonth() / 6) + 1;
-            const sEnd = new Date(curr.getFullYear(), s * 6, 0);
-            const actualEnd = sEnd > endDate ? endDate : sEnd;
-            cols.push({
-                label: `S${s}`,
-                parentLabel: curr.getFullYear().toString(),
-                start: new Date(curr.getFullYear(), curr.getMonth(), 1, 0, 0, 0),
-                end: new Date(actualEnd.getFullYear(), actualEnd.getMonth(), actualEnd.getDate(), 23, 59, 59)
-            });
-            curr = new Date(curr.getFullYear(), curr.getMonth() + 6, 1);
-        }
+  const navigateTo = (tab: string) => {
+    if (tab === 'accueil') {
+      setIsSlidebarOpen(false);
+      startTransition(() => {
+        setActiveTab('accueil');
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
     }
-    return cols;
-  }, [ganttStartMonth, ganttEndMonth, ganttViewMode]);
 
-  const ganttParents = useMemo(() => {
-    const parents: Array<{ label: string; count: number }> = [];
-    if (!ganttColumns || ganttColumns.length === 0) return [];
-    let currentParent: { label: string; count: number } | null = null;
-    ganttColumns.forEach(col => {
-        if (!currentParent || currentParent.label !== col.parentLabel) {
-            if (currentParent) parents.push(currentParent);
-            currentParent = { label: col.parentLabel, count: 1 };
-        } else {
-            currentParent.count++;
-        }
+    // 1. If not signed in with Google yet -> authenticate via Google Sign-In first
+    if (!authUser) {
+      handleGoogleSignIn();
+      return;
+    }
+
+    // 2. If signed in with Google, but PIN is not verified or device is locked -> open PIN popup
+    if (!isPinVerified || isDeviceLocked) {
+      setIsSlidebarOpen(false);
+      setSuperAdminAuthModalStep(
+        isDeviceLocked ? 'device_locked' : 'pin_and_biometric'
+      );
+      setIsSuperAdminAuthModalOpen(true);
+      return;
+    }
+
+    // 3. Strict dissociation: Super Admin ('fabien.frikupgeneration@gmail.com') cannot access user tabs
+    if (isSuperAdminEmail(authUser.email)) {
+      if (tab !== 'super_admin') {
+        setIsSlidebarOpen(false);
+        startTransition(() => {
+          setActiveTab('super_admin');
+        });
+        showToast(
+          language === 'EN'
+            ? 'Super Administrator account is strictly dissociated from the User workspace.'
+            : 'Le compte Super Administrateur est strictement dissocié de l’espace Utilisateur.'
+        );
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      setIsSlidebarOpen(false);
+      startTransition(() => {
+        setActiveTab('super_admin');
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // 4. Strict dissociation: Standard User cannot access 'super_admin'
+    if (tab === 'super_admin') {
+      showToast(
+        language === 'EN'
+          ? 'Access strictly reserved for the Super Administrator.'
+          : 'Accès strictement réservé au Super Administrateur (fabien.frikupgeneration@gmail.com).'
+      );
+      return;
+    }
+
+    setIsSlidebarOpen(false);
+    startTransition(() => {
+      setActiveTab(tab);
     });
-    if (currentParent) parents.push(currentParent);
-    return parents;
-  }, [ganttColumns]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-  const handleSaveNewDossier = () => {
-    if (!newDossierForm.name.trim()) {
-      setValidationError("Veuillez saisir le nom du dossier.");
-      return;
-    }
-    if (!newDossierForm.institution.trim()) {
-      setValidationError("Veuillez renseigner l'institution rattachée.");
-      return;
-    }
-    const years = Number(newDossierForm.horizonYears) || 10;
-    const startYear = Number(newDossierForm.startYear) || 2026;
-    const endYear = startYear + years - 1;
-    const horizonStr = `${startYear}-${endYear}`;
+  // JSON Save / Overwrite or Export (uniquely for the selected programme)
+  const handleSaveOrExportJSON = async () => {
+    const safeProgSlug = (activeDossier.name || 'programme')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40);
 
-    const newDossier: DossierItem = { 
-      id: `dossier-${Date.now()}`, 
-      name: newDossierForm.name.trim(), 
-      psdYear: startYear,
-      horizonYears: years,
-      horizonPlan: horizonStr, 
-      isReadOnly: false, 
-      type: newDossierForm.type,
-      institution: newDossierForm.institution.trim(),
-      description: newDossierForm.description || 'Espace d\'expérimentation.',
+    const activeDossierDocsData: CustomDocsMap = {
+      ...defaultCustomDocsData,
+      ...(activeDossier.customDocsData || {})
+    };
+
+    const payload = {
+      programmeSelectionne: {
+        ...activeDossier,
+        customDocsData: activeDossierDocsData
+      },
+      dossiers: [
+        {
+          ...activeDossier,
+          customDocsData: activeDossierDocsData
+        }
+      ],
+      activeDossierId: activeDossier.id,
+      userProfile,
+      language,
+      currency,
+      theme,
+      lastJsonFileName,
+      activeTab,
+      customDocsData: activeDossierDocsData
+    };
+    const jsonString = JSON.stringify(payload, null, 2);
+
+    const filename = `FAAB_PLAN_${safeProgSlug.toUpperCase() || 'PROGRAMME'}.json`;
+
+    const res = await saveProgramFile({
+      programName: activeDossier.name,
+      fileName: filename,
+      content: jsonString,
+      mimeType: 'application/json'
+    });
+
+    setLastJsonFileName(filename);
+    if (res.mode === 'directory' || res.mode === 'savepicker') {
+      showToast(
+        language === 'EN'
+          ? `Programme "${activeDossier.name}" saved & overwritten in: ${res.path}`
+          : `Programme "${activeDossier.name}" enregistré et écrasé dans : ${res.path}`
+      );
+    } else {
+      showToast(
+        res.warning ||
+          (language === 'EN'
+            ? `Programme "${activeDossier.name}" exported (${filename} -> ${res.path})`
+            : `Programme "${activeDossier.name}" exporté (${filename} -> dossier : ${res.path})`)
+      );
+    }
+  };
+
+  // JSON Import
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const parsed = safeJsonParse(evt.target?.result as string);
+        const importedDossiers: Dossier[] | null = Array.isArray(parsed?.dossiers)
+          ? parsed.dossiers
+          : parsed?.programmeSelectionne
+          ? [parsed.programmeSelectionne]
+          : null;
+
+        if (importedDossiers && importedDossiers.length > 0) {
+          if (importedDossiers.length === 1) {
+            const singleProg = importedDossiers[0];
+            setDossiers(prev => {
+              const exists = prev.some(d => d.id === singleProg.id);
+              return exists
+                ? prev.map(d => (d.id === singleProg.id ? singleProg : d))
+                : [...prev, singleProg];
+            });
+            setActiveDossierId(singleProg.id);
+          } else {
+            setDossiers(importedDossiers);
+            if (parsed.activeDossierId) {
+              setActiveDossierId(parsed.activeDossierId);
+            } else {
+              setActiveDossierId(importedDossiers[0].id);
+            }
+          }
+          if (parsed.userProfile) setUserProfile(parsed.userProfile);
+          if (parsed.currency) setCurrency(parsed.currency);
+          if (parsed.language) setLanguage(parsed.language);
+          if (parsed.customDocsData) {
+            setCustomDocsData({
+              ...defaultCustomDocsData,
+              ...parsed.customDocsData
+            });
+          }
+          setLastJsonFileName(file.name);
+          showToast(`Programme restauré depuis : ${file.name}`);
+        } else {
+          showToast('Fichier JSON non reconnu.');
+        }
+      } catch {
+        showToast('Erreur de lecture du fichier JSON.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Dossier / Axe / Project / Task mutations
+  const updateActiveDossier = (updater: (d: Dossier) => Dossier) => {
+    setDossiers(prev =>
+      prev.map(d => (d.id === activeDossier.id ? updater(d) : d))
+    );
+  };
+
+  // CSV Round-Trip Helpers (UTF-8 with BOM \uFEFF + semicolon separator for Excel + Anti-Formula Injection)
+  const escapeCsvCell = (val: unknown): string => {
+    return sanitizeCsvCellForExport(val);
+  };
+
+  const parseCsvText = (rawText: string): Array<Record<string, string>> => {
+    const cleanText = rawText.replace(/^\uFEFF/, '').trim();
+    if (!cleanText) return [];
+
+    const lines: string[] = [];
+    let currentLine = '';
+    let inQuotes = false;
+    for (let i = 0; i < cleanText.length; i++) {
+      const ch = cleanText[i];
+      if (ch === '"') {
+        if (inQuotes && cleanText[i + 1] === '"') {
+          currentLine += '""';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+          currentLine += ch;
+        }
+      } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+        if (ch === '\r' && cleanText[i + 1] === '\n') i++;
+        if (currentLine.trim().length > 0) lines.push(currentLine);
+        currentLine = '';
+      } else {
+        currentLine += ch;
+      }
+    }
+    if (currentLine.trim().length > 0) lines.push(currentLine);
+    if (lines.length < 2) return [];
+
+    const headerLine = lines[0];
+    const semiCount = (headerLine.match(/;/g) || []).length;
+    const commaCount = (headerLine.match(/,/g) || []).length;
+    const delimiter = semiCount >= commaCount ? ';' : ',';
+
+    const splitRow = (rowStr: string): string[] => {
+      const cells: string[] = [];
+      let cur = '';
+      let quoted = false;
+      for (let i = 0; i < rowStr.length; i++) {
+        const c = rowStr[i];
+        if (c === '"') {
+          if (quoted && rowStr[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            quoted = !quoted;
+          }
+        } else if (c === delimiter && !quoted) {
+          cells.push(cur.trim());
+          cur = '';
+        } else {
+          cur += c;
+        }
+      }
+      cells.push(cur.trim());
+      return cells;
+    };
+
+    const normalizeKey = (k: string) =>
+      k
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9_]/g, '');
+
+    const rawHeaders = splitRow(lines[0]).map(normalizeKey);
+    const records: Array<Record<string, string>> = [];
+
+    for (let r = 1; r < lines.length; r++) {
+      const vals = splitRow(lines[r]);
+      if (vals.every(v => !v)) continue;
+      const rec: Record<string, string> = {};
+      rawHeaders.forEach((h, idx) => {
+        if (h) rec[h] = sanitizeCsvValueOnImport(vals[idx] ?? '');
+      });
+      records.push(rec);
+    }
+    return records;
+  };
+
+  const triggerCsvDownload = (filename: string, csvLines: string[]) => {
+    const bom = '\uFEFF';
+    const content = bom + csvLines.join('\r\n');
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportPlanificationCSV = async () => {
+    const headers = [
+      'TaskID',
+      'Code',
+      'AxeID',
+      'Axe',
+      'ProjectID',
+      'Projet',
+      'Phase',
+      'Type',
+      'Activite',
+      'Antecedent',
+      'DateDebutPrevue',
+      'DateFinPrevue',
+      'Budget',
+      'Statut',
+      'DateDebutReelle',
+      'DateFinReelle',
+      'Livrable'
+    ];
+    const rows: string[] = [headers.join(';')];
+
+    (activeDossier.axes || []).forEach(axe => {
+      (axe.projects || []).forEach(proj => {
+        const rawTasks = proj.tasks || [];
+        const codeMap = new Map<string, string>();
+        STANDARD_PHASES.forEach((pName, pIdx) => {
+          rawTasks
+            .filter(tk => tk.phase === pName)
+            .forEach((tk, tIdx) => {
+              codeMap.set(
+                tk.id,
+                `${tk.type === 'jalon' ? 'J' : 'T'}.${pIdx + 1}.${tIdx + 1}`
+              );
+            });
+        });
+
+        rawTasks.forEach((tk, idx) => {
+          const code =
+            codeMap.get(tk.id) ||
+            `${tk.type === 'jalon' ? 'J' : 'T'}.1.${idx + 1}`;
+          rows.push(
+            [
+              tk.id,
+              code,
+              axe.id,
+              axe.name,
+              proj.id,
+              proj.name,
+              tk.phase || 'PLANIFICATION',
+              tk.type || 'tache',
+              tk.name || '',
+              tk.antecedent || '—',
+              tk.startDate || todayISO,
+              tk.endDate || todayISO,
+              Number(tk.budget) || 0,
+              tk.status || 'À faire',
+              tk.actualStartDate || '',
+              tk.actualEndDate || '',
+              tk.livrable || ''
+            ]
+              .map(escapeCsvCell)
+              .join(';')
+          );
+        });
+      });
+    });
+
+    const safeSlug = (activeDossier.name || 'programme')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .slice(0, 30);
+    const filename = `FAAB_PLAN_Planification_${safeSlug}.csv`;
+    const bom = '\uFEFF';
+    const csvContent = bom + rows.join('\r\n');
+
+    const res = await saveProgramFile({
+      programName: activeDossier.name,
+      fileName: filename,
+      content: csvContent,
+      mimeType: 'text/csv;charset=utf-8;'
+    });
+
+    setCsvMenuOpen(null);
+    if (res.mode === 'directory' || res.mode === 'savepicker') {
+      showToast(
+        language === 'EN'
+          ? `Planning CSV saved & overwritten in: ${res.path}`
+          : `Planification CSV enregistrée et écrasée dans : ${res.path}`
+      );
+    } else {
+      showToast(
+        res.warning ||
+          (language === 'EN'
+            ? `Planning CSV exported: ${filename} (target: ${res.path})`
+            : `Planification exportée en CSV : ${filename} (dossier : ${res.path})`)
+      );
+    }
+  };
+
+  const handleExportRaciCSV = async () => {
+    const headers = [
+      'TaskID',
+      'Code',
+      'AxeID',
+      'Axe',
+      'ProjectID',
+      'Projet',
+      'Phase',
+      'Activite',
+      'R_Responsable',
+      'A_Autorite',
+      'C_Consulte',
+      'I_Informe',
+      'Livrable',
+      'Statut'
+    ];
+    const rows: string[] = [headers.join(';')];
+
+    (activeDossier.axes || []).forEach(axe => {
+      (axe.projects || []).forEach(proj => {
+        const rawTasks = proj.tasks || [];
+        const codeMap = new Map<string, string>();
+        STANDARD_PHASES.forEach((pName, pIdx) => {
+          rawTasks
+            .filter(tk => tk.phase === pName)
+            .forEach((tk, tIdx) => {
+              codeMap.set(
+                tk.id,
+                `${tk.type === 'jalon' ? 'J' : 'T'}.${pIdx + 1}.${tIdx + 1}`
+              );
+            });
+        });
+
+        rawTasks.forEach((tk, idx) => {
+          const code =
+            codeMap.get(tk.id) ||
+            `${tk.type === 'jalon' ? 'J' : 'T'}.1.${idx + 1}`;
+          rows.push(
+            [
+              tk.id,
+              code,
+              axe.id,
+              axe.name,
+              proj.id,
+              proj.name,
+              tk.phase || 'PLANIFICATION',
+              tk.name || '',
+              tk.assignee || tk.raciR || tk.responsabilite || '',
+              tk.autorite || tk.raciA || '',
+              tk.consulte || tk.raciC || '',
+              tk.informe || tk.raciI || '',
+              tk.livrable || '',
+              tk.status || 'À faire'
+            ]
+              .map(escapeCsvCell)
+              .join(';')
+          );
+        });
+      });
+    });
+
+    const safeSlug = (activeDossier.name || 'programme')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .slice(0, 30);
+    const filename = `FAAB_PLAN_Matrice_RACI_${safeSlug}.csv`;
+    const bom = '\uFEFF';
+    const csvContent = bom + rows.join('\r\n');
+
+    const res = await saveProgramFile({
+      programName: activeDossier.name,
+      fileName: filename,
+      content: csvContent,
+      mimeType: 'text/csv;charset=utf-8;'
+    });
+
+    setCsvMenuOpen(null);
+    if (res.mode === 'directory' || res.mode === 'savepicker') {
+      showToast(
+        language === 'EN'
+          ? `RACI Matrix CSV saved & overwritten in: ${res.path}`
+          : `Matrice RACI CSV enregistrée et écrasée dans : ${res.path}`
+      );
+    } else {
+      showToast(
+        res.warning ||
+          (language === 'EN'
+            ? `RACI Matrix exported: ${filename} (target: ${res.path})`
+            : `Matrice RACI exportée en CSV : ${filename} (dossier : ${res.path})`)
+      );
+    }
+  };
+
+  const handleImportPlanificationCSV = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const records = parseCsvText(String(evt.target?.result || ''));
+        if (records.length === 0) {
+          showToast('Fichier CSV vide ou format non valide.');
+          return;
+        }
+
+        let updatedCount = 0;
+        let createdCount = 0;
+
+        updateActiveDossier(d => {
+          const nextAxes: Axe[] = (d.axes || []).map(a => ({
+            ...a,
+            projects: (a.projects || []).map(p => ({
+              ...p,
+              tasks: [...(p.tasks || [])]
+            }))
+          }));
+
+          records.forEach((rec, idx) => {
+            const taskId = rec.taskid || rec.id || '';
+            const axeId = rec.axeid || '';
+            const axeName = rec.axe || '';
+            const projId = rec.projectid || rec.projetid || '';
+            const projName = rec.projet || rec.project || '';
+            const actName =
+              rec.activite || rec.tache || rec.name || rec.intitule || '';
+            if (!actName && !taskId) return;
+
+            const rawPhase = (rec.phase || '').toUpperCase().trim();
+            const validPhase = STANDARD_PHASES.includes(rawPhase as any)
+              ? rawPhase
+              : STANDARD_PHASES.find(p =>
+                  rawPhase.includes(p.slice(0, 6))
+                ) || 'PLANIFICATION';
+
+            const rawType = (rec.type || '').toLowerCase().trim();
+            const validType: 'tache' | 'jalon' =
+              rawType === 'jalon' || rawType === 'j' ? 'jalon' : 'tache';
+
+            const rawStatus = (rec.statut || rec.status || '').trim();
+            const validStatus: Task['status'] =
+              rawStatus === 'Terminé' ||
+              rawStatus === 'En cours' ||
+              rawStatus === 'Bloqué' ||
+              rawStatus === 'À faire'
+                ? rawStatus
+                : 'À faire';
+
+            const cleanBudget =
+              Number(
+                String(rec.budget || '0')
+                  .replace(/\s/g, '')
+                  .replace(',', '.')
+                  .replace(/[^0-9.-]/g, '')
+              ) || 0;
+
+            // 1. Try finding existing task by ID or by Project+Name
+            let matchedTask: Task | undefined;
+            for (const ax of nextAxes) {
+              for (const pr of ax.projects || []) {
+                const found = (pr.tasks || []).find(
+                  tk =>
+                    (taskId && tk.id === taskId) ||
+                    (!taskId &&
+                      actName &&
+                      tk.name.trim().toLowerCase() ===
+                        actName.trim().toLowerCase() &&
+                      (!projName ||
+                        pr.name.trim().toLowerCase() ===
+                          projName.trim().toLowerCase()))
+                );
+                if (found) {
+                  matchedTask = found;
+                  break;
+                }
+              }
+              if (matchedTask) break;
+            }
+
+            if (matchedTask) {
+              if (actName) matchedTask.name = actName;
+              if (rec.phase) matchedTask.phase = validPhase;
+              if (rec.type) matchedTask.type = validType;
+              if (rec.antecedent !== undefined && rec.antecedent !== '') {
+                matchedTask.antecedent = rec.antecedent;
+              }
+              if (rec.datedebutprevue || rec.startdate) {
+                matchedTask.startDate = rec.datedebutprevue || rec.startdate;
+              }
+              if (rec.datefinprevue || rec.enddate) {
+                matchedTask.endDate = rec.datefinprevue || rec.enddate;
+              }
+              if (rec.budget !== undefined && rec.budget !== '') {
+                matchedTask.budget = cleanBudget;
+              }
+              if (rec.statut || rec.status) {
+                matchedTask.status = validStatus;
+              }
+              if (rec.datedebutreelle !== undefined) {
+                matchedTask.actualStartDate = rec.datedebutreelle;
+              }
+              if (rec.datefinreelle !== undefined) {
+                matchedTask.actualEndDate = rec.datefinreelle;
+              }
+              if (rec.livrable !== undefined) {
+                matchedTask.livrable = rec.livrable;
+              }
+              updatedCount++;
+            } else {
+              // Find or create target Axe & Project
+              let targetAxe =
+                nextAxes.find(
+                  a =>
+                    (axeId && a.id === axeId) ||
+                    (axeName &&
+                      a.name.trim().toLowerCase() ===
+                        axeName.trim().toLowerCase())
+                ) || nextAxes[0];
+
+              if (!targetAxe) {
+                targetAxe = {
+                  id: axeId || `axe-csv-${Date.now()}`,
+                  name: axeName || 'Axe 1 : Axe Importé CSV',
+                  projects: []
+                };
+                nextAxes.push(targetAxe);
+              }
+
+              let targetProj =
+                (targetAxe.projects || []).find(
+                  p =>
+                    (projId && p.id === projId) ||
+                    (projName &&
+                      p.name.trim().toLowerCase() ===
+                        projName.trim().toLowerCase())
+                ) || (targetAxe.projects || [])[0];
+
+              if (!targetProj) {
+                targetProj = {
+                  id: projId || `proj-csv-${Date.now()}-${idx}`,
+                  name: projName || 'Projet Importé CSV',
+                  tasks: []
+                };
+                targetAxe.projects = [...(targetAxe.projects || []), targetProj];
+              }
+
+              const newTk: Task = {
+                id: taskId || `tk-csv-${Date.now()}-${idx}`,
+                type: validType,
+                phase: validPhase,
+                name: actName || `Activité CSV ${idx + 1}`,
+                startDate: rec.datedebutprevue || rec.startdate || todayISO,
+                endDate: rec.datefinprevue || rec.enddate || todayISO,
+                actualStartDate: rec.datedebutreelle || '',
+                actualEndDate: rec.datefinreelle || '',
+                status: validStatus,
+                assignee: rec.r_responsable || rec.responsable || '',
+                autorite: rec.a_autorite || rec.autorite || '',
+                consulte: rec.c_consulte || rec.consulte || '',
+                informe: rec.i_informe || rec.informe || '',
+                livrable: rec.livrable || '',
+                budget: cleanBudget,
+                antecedent: rec.antecedent || '—'
+              };
+              targetProj.tasks = [...(targetProj.tasks || []), newTk];
+              createdCount++;
+            }
+          });
+
+          const nextDossier: Dossier = { ...d, axes: nextAxes };
+          return {
+            ...nextDossier,
+            categorizedActors: ensureDossierCategorizedActors(nextDossier)
+          };
+        });
+
+        showToast(
+          `CSV Planification importé (${updatedCount} mis à jour, ${createdCount} ajouté(s)).`
+        );
+      } catch {
+        showToast("Erreur lors de l'importation du CSV Planification.");
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
+    setCsvMenuOpen(null);
+  };
+
+  const handleImportRaciCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const records = parseCsvText(String(evt.target?.result || ''));
+        if (records.length === 0) {
+          showToast('Fichier CSV RACI vide ou format non valide.');
+          return;
+        }
+
+        let updatedCount = 0;
+        let createdCount = 0;
+
+        updateActiveDossier(d => {
+          const nextAxes: Axe[] = (d.axes || []).map(a => ({
+            ...a,
+            projects: (a.projects || []).map(p => ({
+              ...p,
+              tasks: [...(p.tasks || [])]
+            }))
+          }));
+
+          records.forEach((rec, idx) => {
+            const taskId = rec.taskid || rec.id || '';
+            const axeId = rec.axeid || '';
+            const axeName = rec.axe || '';
+            const projId = rec.projectid || rec.projetid || '';
+            const projName = rec.projet || rec.project || '';
+            const actName =
+              rec.activite || rec.tache || rec.name || rec.intitule || '';
+            if (!actName && !taskId) return;
+
+            const rVal =
+              rec.r_responsable ??
+              rec.rresponsable ??
+              rec.responsable ??
+              rec.r ??
+              undefined;
+            const aVal =
+              rec.a_autorite ??
+              rec.aautorite ??
+              rec.autorite ??
+              rec.a ??
+              undefined;
+            const cVal =
+              rec.c_consulte ??
+              rec.cconsulte ??
+              rec.consulte ??
+              rec.c ??
+              undefined;
+            const iVal =
+              rec.i_informe ??
+              rec.iinforme ??
+              rec.informe ??
+              rec.i ??
+              undefined;
+
+            let matchedTask: Task | undefined;
+            for (const ax of nextAxes) {
+              for (const pr of ax.projects || []) {
+                const found = (pr.tasks || []).find(
+                  tk =>
+                    (taskId && tk.id === taskId) ||
+                    (!taskId &&
+                      actName &&
+                      tk.name.trim().toLowerCase() ===
+                        actName.trim().toLowerCase() &&
+                      (!projName ||
+                        pr.name.trim().toLowerCase() ===
+                          projName.trim().toLowerCase()))
+                );
+                if (found) {
+                  matchedTask = found;
+                  break;
+                }
+              }
+              if (matchedTask) break;
+            }
+
+            if (matchedTask) {
+              if (actName) matchedTask.name = actName;
+              if (rVal !== undefined) {
+                matchedTask.assignee = rVal;
+                matchedTask.raciR = rVal;
+                matchedTask.responsabilite = rVal;
+              }
+              if (aVal !== undefined) {
+                matchedTask.autorite = aVal;
+                matchedTask.raciA = aVal;
+              }
+              if (cVal !== undefined) {
+                matchedTask.consulte = cVal;
+                matchedTask.raciC = cVal;
+              }
+              if (iVal !== undefined) {
+                matchedTask.informe = iVal;
+                matchedTask.raciI = iVal;
+              }
+              if (rec.livrable !== undefined) {
+                matchedTask.livrable = rec.livrable;
+              }
+              if (rec.statut || rec.status) {
+                const st = (rec.statut || rec.status).trim();
+                if (
+                  st === 'Terminé' ||
+                  st === 'En cours' ||
+                  st === 'Bloqué' ||
+                  st === 'À faire'
+                ) {
+                  matchedTask.status = st;
+                }
+              }
+              updatedCount++;
+            } else {
+              let targetAxe =
+                nextAxes.find(
+                  a =>
+                    (axeId && a.id === axeId) ||
+                    (axeName &&
+                      a.name.trim().toLowerCase() ===
+                        axeName.trim().toLowerCase())
+                ) || nextAxes[0];
+
+              if (!targetAxe) {
+                targetAxe = {
+                  id: axeId || `axe-raci-${Date.now()}`,
+                  name: axeName || 'Axe 1 : Axe Importé RACI',
+                  projects: []
+                };
+                nextAxes.push(targetAxe);
+              }
+
+              let targetProj =
+                (targetAxe.projects || []).find(
+                  p =>
+                    (projId && p.id === projId) ||
+                    (projName &&
+                      p.name.trim().toLowerCase() ===
+                        projName.trim().toLowerCase())
+                ) || (targetAxe.projects || [])[0];
+
+              if (!targetProj) {
+                targetProj = {
+                  id: projId || `proj-raci-${Date.now()}-${idx}`,
+                  name: projName || 'Projet Importé RACI',
+                  tasks: []
+                };
+                targetAxe.projects = [...(targetAxe.projects || []), targetProj];
+              }
+
+              const rawPhase = (rec.phase || '').toUpperCase().trim();
+              const validPhase = STANDARD_PHASES.includes(rawPhase as any)
+                ? rawPhase
+                : 'PLANIFICATION';
+
+              const newTk: Task = {
+                id: taskId || `tk-raci-${Date.now()}-${idx}`,
+                type: 'tache',
+                phase: validPhase,
+                name: actName || `Activité RACI ${idx + 1}`,
+                startDate: todayISO,
+                endDate: todayISO,
+                status: 'À faire',
+                assignee: rVal || '',
+                raciR: rVal || '',
+                responsabilite: rVal || '',
+                autorite: aVal || '',
+                raciA: aVal || '',
+                consulte: cVal || '',
+                raciC: cVal || '',
+                informe: iVal || '',
+                raciI: iVal || '',
+                livrable: rec.livrable || '',
+                budget: 0,
+                antecedent: '—'
+              };
+              targetProj.tasks = [...(targetProj.tasks || []), newTk];
+              createdCount++;
+            }
+          });
+
+          const nextDossier: Dossier = { ...d, axes: nextAxes };
+          return {
+            ...nextDossier,
+            categorizedActors: ensureDossierCategorizedActors(nextDossier)
+          };
+        });
+
+        showToast(
+          `CSV Matrice RACI importé (${updatedCount} mis à jour, ${createdCount} ajouté(s)).`
+        );
+      } catch {
+        showToast("Erreur lors de l'importation du CSV RACI.");
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
+    setCsvMenuOpen(null);
+  };
+
+  const createDossierDirect = (
+    name: string,
+    desc: string,
+    horizon: string = '2026-2030'
+  ) => {
+    const newId = `dossier-${Date.now()}`;
+    const newDossier: Dossier = {
+      id: newId,
+      name,
+      horizonPlan: horizon,
+      psdYear: new Date().getFullYear(),
+      horizonYears: 5,
+      type: 'Portefeuille Stratégique',
+      institution: userProfile.institution || 'Organisation',
+      description:
+        desc || 'Portefeuille de projets planifié et suivi dans FAAB RISK.',
       axes: [
         {
-          id: `axe-1-${Date.now()}`,
-          name: 'Axe 1 : Transformation Digitale & Performance administrative',
+          id: `axe-${Date.now()}`,
+          name: 'Axe 1 : Orientation Stratégique Principale',
           projects: [
             {
-              id: `proj-sim-${Date.now()}`,
-              name: 'Projet Pilote : Déploiement de la méthodologie GAR',
+              id: `proj-${Date.now()}`,
+              name: 'Projet 1.1 : Projet Opérationnel Pilote',
               tasks: [
                 {
-                  id: `t-sim-init-${Date.now()}`,
+                  id: `task-${Date.now()}`,
                   type: 'tache',
-                  taskOrMilestone: 'tache',
-                  activity: 'Diagnostic technique',
                   phase: 'AVANT PROJET',
-                  name: 'Risque cyber ou fuite de données d\'évaluation',
-                  startDate: `${startYear}-03-01`,
-                  endDate: `${startYear}-05-15`,
-                  status: 'À faire',
-                  assignee: 'Comité de Pilotage GAR',
-                  responsabilite: 'Coordinateur Performance',
-                  livrable: 'Diagnostic SWOT validé',
-                  dateIdentification: `${startYear}-03-01`,
-                  declarePar: 'Michael K.',
-                  riskStatus: 'nouveau',
-                  nature: 'technologie / technique',
-                  probabilite: 'probable',
-                  gravite: 'grave',
-                  criticite: 'critique',
-                  consequence: 'délai',
-                  tendance: 'stable',
-                  actionPreventive: 'Mise en place de protocoles de sécurité renforcés.',
-                  actionCorrective: 'Restauration des sauvegardes chiffrées.',
-                  dateResolution: '',
-                  resolutionFinale: '',
-                  commentaire: 'Audit technique planifié.'
+                  name: 'Cadrage initial et lancement opérationnel',
+                  startDate: todayISO,
+                  endDate: todayISO,
+                  status: 'En cours',
+                  assignee: userProfile.fullName || 'Chef de Projet',
+                  autorite: 'Comité de Pilotage (COPIL)',
+                  consulte: 'Experts Techniques',
+                  informe: 'Parties Prenantes',
+                  budget: 5000000,
+                  antecedent: '—'
                 }
               ]
             }
           ]
         }
-      ] 
+      ]
     };
 
-    setData([...data, newDossier]);
-    setActiveDossierId(newDossier.id);
-    setIsCreatingDossier(false);
-    setValidationError('');
+    setDossiers(prev => [...prev, newDossier]);
+    setActiveDossierId(newId);
+    setFilterAxeId('ALL');
+    setFilterProjectId('ALL');
+    showToast(`Nouveau dossier "${newDossier.name}" créé et activé.`);
   };
 
-  const handleUpdateDossier = (id: string, field: keyof DossierItem, value: any) => {
-    setData(data.map(d => {
-      if (d.id === id) {
-        const updated = { ...d, [field]: value };
-        const startY = Number(updated.psdYear);
-        const yearsLength = Number(updated.horizonYears);
-        
-        if (!isNaN(startY) && !isNaN(yearsLength) && yearsLength > 0) {
-          const endY = startY + yearsLength - 1;
-          updated.horizonPlan = `${startY}-${endY}`;
-        } else if (!isNaN(startY)) {
-          updated.horizonPlan = `${startY}`;
-        }
-        return updated;
-      }
-      return d;
-    }));
+  const handleUpdateDossier = (
+    id: string,
+    patch: Partial<Pick<Dossier, 'name' | 'description' | 'horizonPlan'>>
+  ) => {
+    setDossiers(prev =>
+      prev.map(d => (d.id === id ? { ...d, ...patch } : d))
+    );
+    showToast('Programme mis à jour.');
   };
 
   const handleDeleteDossier = (id: string) => {
-    setData(data.filter(d => d.id !== id));
+    if (dossiers.length <= 1) {
+      showToast('Impossible de supprimer le dernier dossier.');
+      return;
+    }
+    const remaining = dossiers.filter(d => d.id !== id);
+    setDossiers(remaining);
+    if (activeDossierId === id) {
+      setActiveDossierId(remaining[0].id);
+    }
+    showToast('Dossier supprimé.');
   };
 
-  const handleAddAxe = (dossierId: string) => {
-    setData(data.map(d => d.id === dossierId ? { 
-      ...d, 
-      axes: [...(d.axes || []), { id: `axe-${Date.now()}-${Math.floor(Math.random()*1000)}`, name: 'Nouvel Axe Stratégique', projects: [] }] 
-    } : d));
-  };
-
-  const handleUpdateAxe = (dossierId: string, axeId: string, field: keyof AxeItem, value: any) => {
-    setData(data.map(d => dossierId === d.id ? { 
-      ...d, 
-      axes: d.axes.map(a => a.id === axeId ? { ...a, [field]: value } : a) 
-    } : d));
-  };
-
-  const handleDeleteAxe = (dossierId: string, axeId: string) => {
-     setData(data.map(d => dossierId === d.id ? { 
-       ...d, 
-       axes: d.axes.filter(a => a.id !== axeId) 
-     } : d));
-  };
-
-  const handleAddProject = (dossierId: string, axeId: string) => {
-    setData(data.map(d => dossierId === d.id ? { 
-      ...d, 
-      axes: d.axes.map(a => a.id === axeId ? { 
-        ...a, 
-        projects: [...(a.projects || []), { id: `proj-${Date.now()}-${Math.floor(Math.random()*1000)}`, name: 'Nouveau Projet d\'entraînement', tasks: [] }] 
-      } : a) 
-    } : d));
-  };
-
-  const handleUpdateProject = (dossierId: string, axeId: string, projId: string, field: keyof ProjectItem, value: any) => {
-    setData(data.map(d => dossierId === d.id ? { 
-      ...d, 
-      axes: d.axes.map(a => a.id === axeId ? { 
-        ...a, 
-        projects: a.projects.map(p => p.id === projId ? { ...p, [field]: value } : p) 
-      } : a) 
-    } : d));
-  };
-  
-  const handleDeleteProject = (dossierId: string, axeId: string, projId: string) => {
-    setData(data.map(d => d.id === dossierId ? { 
-      ...d, 
-      axes: d.axes.map(a => a.id === axeId ? { 
-        ...a, 
-        projects: a.projects.filter(p => p.id !== projId) 
-      } : a) 
-    } : d));
-  };
-
-  const [inlineEdit, setInlineEdit] = useState<InlineEditState | null>(null);
-  const [taskDeleteConfirmation, setTaskDeleteConfirmation] = useState<string | null>(null); 
-  const [validationError, setValidationError] = useState('');
-
-  const openInlineAdd = (dossierId: string, axeId: string, projectId: string, phase: string, type = 'tache') => {
-    setInlineEdit({
-      taskId: 'new', dossierId, axeId, projectId, phase,
-      data: { ...defaultTaskForm, phase, type, taskOrMilestone: type }
-    });
-  };
-
-  const openInlineEdit = (dossierId: string, axeId: string, projectId: string, task: TaskItem) => {
-    setInlineEdit({
-      taskId: task.id, dossierId, axeId, projectId, phase: task.phase,
-      data: { ...defaultTaskForm, ...task }
-    });
-  };
-
-  // Logic de synchronisation temporelle selon Jalon/Tâche
-  const handleInlineChange = (field: keyof TaskItem, value: any) => {
-    setInlineEdit(prev => {
-      if (!prev) return null;
-      const newData: TaskItem = { ...prev.data, [field]: value };
-      
-      if (field === 'taskOrMilestone') {
-        newData.type = value;
-      }
-      if (field === 'type') {
-        newData.taskOrMilestone = value;
-      }
-
-      // Si jalon, date début = date fin
-      if (newData.taskOrMilestone === 'jalon' || newData.type === 'jalon') {
-        if (field === 'startDate') {
-          newData.endDate = value;
-        } else if (field === 'endDate') {
-          newData.startDate = value;
-        } else if (field === 'taskOrMilestone' || field === 'type') {
-          newData.endDate = newData.startDate;
+  const handleAddAxe = () => {
+    const nextNum = (activeDossier.axes || []).length + 1;
+    const newAxe: Axe = {
+      id: `axe-${Date.now()}`,
+      name: `Axe ${nextNum} : Nouvel Axe Stratégique`,
+      projects: [
+        {
+          id: `proj-${Date.now()}`,
+          name: `Projet ${nextNum}.1 : Nouveau Projet Opérationnel`,
+          tasks: []
         }
+      ]
+    };
+    updateActiveDossier(d => ({
+      ...d,
+      axes: [...(d.axes || []), newAxe]
+    }));
+    showToast(`Nouvel Axe ${nextNum} ajouté.`);
+  };
+
+  const handleUpdateAxeName = (axeId: string, name: string) => {
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a => (a.id === axeId ? { ...a, name } : a))
+    }));
+  };
+
+  const handleDeleteAxe = (axeId: string) => {
+    if ((activeDossier.axes || []).length <= 1) {
+      showToast('Le dossier doit conserver au moins un Axe Stratégique.');
+      return;
+    }
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).filter(a => a.id !== axeId)
+    }));
+    if (filterAxeId === axeId) setFilterAxeId('ALL');
+    showToast('Axe supprimé.');
+  };
+
+  const handleAddProject = (targetAxeId?: string) => {
+    const targetAxe = targetAxeId
+      ? (activeDossier.axes || []).find(a => a.id === targetAxeId)
+      : filterAxeId !== 'ALL'
+      ? (activeDossier.axes || []).find(a => a.id === filterAxeId)
+      : (activeDossier.axes || [])[0];
+    if (!targetAxe) {
+      handleAddAxe();
+      return;
+    }
+    const nextNum = (targetAxe.projects || []).length + 1;
+    const newProj: Project = {
+      id: `proj-${Date.now()}`,
+      name: `Projet ${nextNum} : Nouveau Projet Opérationnel`,
+      tasks: []
+    };
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a =>
+        a.id === targetAxe.id
+          ? { ...a, projects: [...(a.projects || []), newProj] }
+          : a
+      )
+    }));
+    showToast(`Projet ajouté dans ${targetAxe.name}.`);
+  };
+
+  const handleUpdateProjectName = (projectId: string, name: string) => {
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a => ({
+        ...a,
+        projects: (a.projects || []).map(p =>
+          p.id === projectId ? { ...p, name } : p
+        )
+      }))
+    }));
+  };
+
+  const handleDeleteProject = (projectId: string) => {
+    updateActiveDossier(d => ({
+      ...d,
+      axes: (d.axes || []).map(a => ({
+        ...a,
+        projects: (a.projects || []).filter(p => p.id !== projectId)
+      }))
+    }));
+    if (filterProjectId === projectId) setFilterProjectId('ALL');
+    showToast('Projet supprimé.');
+  };
+
+  const handleAddTaskInPhase = (
+    projectId: string,
+    phaseName: string,
+    type: 'tache' | 'jalon' = 'tache',
+    customData?: Partial<Task>
+  ) => {
+    const newTask: Task = {
+      id: `tk-${Date.now()}`,
+      type,
+      phase: phaseName,
+      name:
+        customData?.name ||
+        (type === 'jalon'
+          ? `Nouveau Jalon (${phaseName})`
+          : `Nouvelle Activité (${phaseName})`),
+      startDate: customData?.startDate || todayISO,
+      endDate: customData?.endDate || todayISO,
+      actualStartDate: customData?.actualStartDate || '',
+      actualEndDate: customData?.actualEndDate || '',
+      status: customData?.status || 'À faire',
+      assignee:
+        customData?.assignee !== undefined
+          ? customData.assignee
+          : userProfile.intervenesAsProgramActor !== false
+          ? userProfile.fullName || ''
+          : '',
+      autorite: customData?.autorite || '',
+      consulte: customData?.consulte || '',
+      informe: customData?.informe || '',
+      livrable: customData?.livrable || '',
+      budget:
+        customData?.budget !== undefined
+          ? customData.budget
+          : type === 'jalon'
+          ? 0
+          : 2500000,
+      antecedent: customData?.antecedent || '—',
+      ...customData
+    };
+
+    const clearDocsMatricesCache = (docsData?: Dossier['customDocsData']): Dossier['customDocsData'] => {
+      if (!docsData) return docsData;
+      const next = { ...docsData };
+      (Object.keys(next) as InstitutionalDocType[]).forEach(k => {
+        if (next[k] && next[k].matricesJson) {
+          next[k] = { ...next[k], matricesJson: '' };
+        }
+      });
+      return next;
+    };
+
+    updateActiveDossier(d => ({
+      ...d,
+      customDocsData: clearDocsMatricesCache(d.customDocsData),
+      axes: (d.axes || []).map(a => ({
+        ...a,
+        projects: (a.projects || []).map(p =>
+          p.id === projectId
+            ? { ...p, tasks: [...(p.tasks || []), newTask] }
+            : p
+        )
+      }))
+    }));
+    showToast(
+      `${type === 'jalon' ? 'Jalon' : 'Activité / Risque'} ajouté(e) dans la phase « ${phaseName} ».`
+    );
+  };
+
+  const handleAddTask = (type: 'tache' | 'jalon' = 'tache') => {
+    const targetProj =
+      filterProjectId !== 'ALL'
+        ? availableProjectsInFilter.find(p => p.id === filterProjectId)
+        : availableProjectsInFilter[0];
+    if (!targetProj) {
+      showToast("Veuillez d'abord créer un Projet.");
+      return;
+    }
+    handleAddTaskInPhase(targetProj.id, 'PLANIFICATION', type);
+  };
+
+  const handleUpdateTask = (
+    projectId: string,
+    taskId: string,
+    patch: Partial<Task>
+  ) => {
+    updateActiveDossier(d => {
+      const nextDocs = d.customDocsData ? { ...d.customDocsData } : undefined;
+      if (nextDocs) {
+        (Object.keys(nextDocs) as InstitutionalDocType[]).forEach(k => {
+          if (nextDocs[k] && nextDocs[k].matricesJson) {
+            nextDocs[k] = { ...nextDocs[k], matricesJson: '' };
+          }
+        });
       }
-      
-      return { ...prev, data: newData };
+      return {
+        ...d,
+        customDocsData: nextDocs,
+        axes: (d.axes || []).map(a => ({
+          ...a,
+          projects: (a.projects || []).map(p =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  tasks: (p.tasks || []).map(tk =>
+                    tk.id === taskId ? { ...tk, ...patch } : tk
+                  )
+                }
+              : p
+          )
+        }))
+      };
     });
   };
 
-  const cancelInlineEdit = () => {
-    setInlineEdit(null);
-    setValidationError('');
-  };
-  
-  const saveInlineEdit = () => {
-    if (!inlineEdit) return;
-    if (!inlineEdit.data.name.trim()) {
-      setValidationError("Veuillez saisir un intitulé pour le risque.");
-      return;
-    }
-    if (!STANDARD_PHASES.includes(inlineEdit.data.phase)) {
-      setValidationError("Phase invalide. Le cycle de projet imposé doit être respecté.");
-      return;
-    }
-
-    setValidationError('');
-
-    // Synchronisation fluide des dates de repli
-    if (inlineEdit.data.dateIdentification) {
-      if (!inlineEdit.data.startDate) {
-        inlineEdit.data.startDate = inlineEdit.data.dateIdentification;
+  const handleDeleteTask = (projectId: string, taskId: string) => {
+    updateActiveDossier(d => {
+      const nextDocs = d.customDocsData ? { ...d.customDocsData } : undefined;
+      if (nextDocs) {
+        (Object.keys(nextDocs) as InstitutionalDocType[]).forEach(k => {
+          if (nextDocs[k] && nextDocs[k].matricesJson) {
+            nextDocs[k] = { ...nextDocs[k], matricesJson: '' };
+          }
+        });
       }
-      if (!inlineEdit.data.endDate) {
-        inlineEdit.data.endDate = inlineEdit.data.dateIdentification;
+      return {
+        ...d,
+        customDocsData: nextDocs,
+        axes: (d.axes || []).map(a => ({
+          ...a,
+          projects: (a.projects || []).map(p =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  tasks: (p.tasks || []).filter(tk => tk.id !== taskId)
+                }
+              : p
+          )
+        }))
+      };
+    });
+  };
+
+  const handleMoveTaskInKanban = (
+    projectId: string,
+    taskId: string,
+    newStatus: Task['status']
+  ) => {
+    updateActiveDossier(d => {
+      const nextDocs = d.customDocsData ? { ...d.customDocsData } : undefined;
+      if (nextDocs) {
+        (Object.keys(nextDocs) as InstitutionalDocType[]).forEach(k => {
+          if (nextDocs[k] && nextDocs[k].matricesJson) {
+            nextDocs[k] = { ...nextDocs[k], matricesJson: '' };
+          }
+        });
       }
-    }
-    if (inlineEdit.data.dateResolution) {
-      inlineEdit.data.endDate = inlineEdit.data.dateResolution;
-    }
-    
-    setData(data.map(d => {
-      if (d.id !== inlineEdit.dossierId) return d;
       return {
-        ...d, axes: d.axes.map(a => {
-          if (a.id !== inlineEdit.axeId) return a;
-          return {
-            ...a, projects: a.projects.map(p => {
-              if (p.id !== inlineEdit.projectId) return p;
-              const tasks = p.tasks || [];
-              let newTasks: TaskItem[];
-              if (inlineEdit.taskId === 'new') {
-                newTasks = [...tasks, { ...inlineEdit.data, id: `t-${Date.now()}` }];
-              } else {
-                newTasks = tasks.map(t => t.id === inlineEdit.taskId ? inlineEdit.data : t);
-              }
-              return { ...p, tasks: newTasks };
-            })
-          };
-        })
+        ...d,
+        customDocsData: nextDocs,
+        axes: (d.axes || []).map(a => ({
+          ...a,
+          projects: (a.projects || []).map(p => {
+            if (p.id !== projectId) return p;
+            const updatedTasks = recalculateProjectTasksOnKanbanMove(
+              p.tasks || [],
+              taskId,
+              newStatus,
+              todayISO
+            );
+            return { ...p, tasks: updatedTasks };
+          })
+        }))
       };
-    }));
-    setInlineEdit(null);
+    });
+    showToast(
+      `Statut changé vers "${newStatus}" (dates prévues recalculées automatiquement).`
+    );
   };
 
-  const handleDeleteTask = (dossierId: string, axeId: string, projectId: string, taskId: string) => {
-    setData(data.map(d => {
-      if (d.id !== dossierId) return d;
-      return {
-        ...d, axes: d.axes.map(a => {
-          if (a.id !== axeId) return a;
-          return {
-            ...a, projects: a.projects.map(p => {
-              if (p.id !== projectId) return p;
-              return { ...p, tasks: p.tasks.filter(t => t.id !== taskId) };
-            })
-          };
-        })
-      };
-    }));
-    setTaskDeleteConfirmation(null);
+  // Document generator field handlers — scoped per selected programme (activeDossier)
+  const activeProgramCustomDocsData: CustomDocsMap = {
+    ...defaultCustomDocsData,
+    ...(activeDossier.customDocsData || {})
   };
 
-  const renderAccueil = () => (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-10 max-w-5xl mx-auto font-sans">
-      <div className="bg-sky-600 rounded-2xl p-8 md:p-12 shadow-xl relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-8">
-        <div className="relative z-10 max-w-xl">
-          <h1 className="text-4xl md:text-5xl font-black text-white mb-3 leading-tight">
-            Maîtrisez le Pilotage et le <br/>
-            <span className="text-sky-200">Suivi des Risques Opérationnels</span>
-          </h1>
-          <p className="text-sky-100 text-lg mb-8 leading-relaxed font-medium font-sans">
-            Cette plateforme est un outil de gouvernance et de maîtrise des processus opérationnels d'exposition aux risques. Identifiez avec rigueur les menaces stratégiques, planifiez vos mesures d'atténuation et pilotez vos plans d'actions préventives et correctives de manière agile pour sécuriser l'atteinte de vos résultats (méthode GAR).
-          </p>
-          <div className="flex flex-wrap gap-4">
-            <button 
-              onClick={() => { 
-                setActiveTab('projects'); 
-                setIsExploring(false); 
-              }} 
-              className="bg-white text-sky-700 hover:bg-sky-50 font-bold px-6 py-3.5 rounded-lg shadow-lg transition-all flex items-center cursor-pointer"
-            >
-              <Folder className="w-5 h-5 mr-3" />
-              Accéder aux Portefeuilles
-            </button>
-          </div>
-        </div>
-        
-        <div className="bg-sky-800/50 rounded-xl p-5 border border-sky-500 w-full md:w-[340px] shadow-2xl relative z-10 backdrop-blur-sm">
-          <p className="text-sky-200 text-[10px] font-bold tracking-widest uppercase mb-1">Application conçue par :</p>
-          <h3 className="text-white font-black text-lg mb-3">KOFFIE FABIEN MICHAEL</h3>
-          <div className="space-y-2 text-xs text-sky-100 font-medium font-sans">
-            <p className="flex items-center"><Mail className="w-4 h-4 mr-2" /> fabien.frikupgeneration@gmail.com</p>
-            <p className="flex items-center"><Phone className="w-4 h-4 mr-2" /> +225 07 48 08 27 39</p>
-          </div>
-        </div>
-      </div>
+  const handleUpdateDocField = (
+    docType: InstitutionalDocType,
+    fieldKey: keyof CustomDocFields,
+    value: string
+  ) => {
+    const isSharedImageKey =
+      fieldKey === 'leftLogoDataUrl' ||
+      fieldKey === 'rightLogoDataUrl' ||
+      fieldKey === 'bannerImageDataUrl' ||
+      fieldKey === 'figureImageDataUrl' ||
+      fieldKey === 'orgStampDataUrl' ||
+      fieldKey === 'partnerStampDataUrl';
 
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm relative text-slate-800">
-        <h4 className="flex items-center text-rose-600 font-black tracking-widest text-sm uppercase mb-3 drop-shadow-sm">
-          <AlertTriangle className="w-5 h-5 mr-2" />
-          Accord de confidentialité & Propriété intellectuelle
-        </h4>
-        <p className="text-xs text-slate-600 font-medium leading-relaxed text-justify font-sans">
-          La présente plateforme, incluant son architecture structurelle, sa logique algorithmique et son design d'interface, constitue une œuvre de l'esprit protégée appartenant à son créateur. En utilisant cette application, l'administration ou l'institution utilisatrice s'engage formellement à respecter la stricte confidentialité de ce système. Toute copie, reproduction, ingénierie inverse, ou distribution non expressément autorisée de cet outil à des tiers est rigoureusement interdite sous peine de poursuites légales.
-        </p>
-      </div>
-    </div>
-  );
+    updateActiveDossier(d => {
+      const prev = {
+        ...defaultCustomDocsData,
+        ...(d.customDocsData || {})
+      };
+      if (isSharedImageKey && value === '') {
+        const cleaned = { ...prev };
+        (Object.keys(cleaned) as InstitutionalDocType[]).forEach(k => {
+          if (cleaned[k]) {
+            cleaned[k] = { ...cleaned[k], [fieldKey]: '' };
+          }
+        });
+        return { ...d, customDocsData: cleaned };
+      }
+      return {
+        ...d,
+        customDocsData: {
+          ...prev,
+          [docType]: {
+            ...(prev[docType] || defaultCustomDocsData[docType]),
+            [fieldKey]: value
+          }
+        }
+      };
+    });
+  };
 
-  const renderDashboard = () => (
-    <div className="space-y-6 animate-in fade-in pb-10 font-sans">
-      <div className="flex justify-between items-center border-b pb-2 border-sky-200 shrink-0">
-        <div>
-          <h2 className="text-2xl font-black text-gray-800 tracking-tight">Tableau de Bord ISO 31000</h2>
-          <p className="text-xs text-gray-500 font-semibold mt-1">Gouvernance & Cartographie des risques par axes stratégiques</p>
-        </div>
-        <div className="flex flex-wrap gap-4 items-center">
-          {cpmDashboardData && (
-            <div className="bg-sky-50 px-4 py-2 rounded-xl shadow-sm border border-sky-200 min-w-[200px] flex flex-col justify-center">
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-xs font-bold text-sky-800 flex items-center"><Activity className="w-3 h-3 mr-1"/>Suivi des Résolutions</span>
-              </div>
-              <span className="text-sm font-black text-sky-600 uppercase tracking-wide">{cpmDashboardData}</span>
-            </div>
-          )}
-          <div className="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200 min-w-[250px]">
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-xs font-bold text-gray-600">Taux de Résolution Globale</span>
-              <span className="text-lg font-bold text-emerald-600">{globalProgress}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div className="bg-emerald-500 h-2 rounded-full transition-all duration-500" style={{ width: `${globalProgress}%` }}></div>
-            </div>
-          </div>
-        </div>
-      </div>
+  const handleResetDocDefaults = (docType: InstitutionalDocType) => {
+    updateActiveDossier(d => {
+      const prev = {
+        ...defaultCustomDocsData,
+        ...(d.customDocsData || {})
+      };
+      const existing = prev[docType];
+      const cleanedDocsData = { ...prev };
+      (Object.keys(cleanedDocsData) as InstitutionalDocType[]).forEach(k => {
+        if (cleanedDocsData[k]) {
+          cleanedDocsData[k] = {
+            ...cleanedDocsData[k],
+            matricesJson: ''
+          };
+        }
+      });
+      return {
+        ...d,
+        customDocsData: {
+          ...cleanedDocsData,
+          [docType]: {
+            ...defaultCustomDocsData[docType],
+            leftLogoDataUrl: existing?.leftLogoDataUrl,
+            rightLogoDataUrl: existing?.rightLogoDataUrl,
+            bannerImageDataUrl: existing?.bannerImageDataUrl,
+            figureImageDataUrl: existing?.figureImageDataUrl,
+            orgStampDataUrl: existing?.orgStampDataUrl,
+            partnerStampDataUrl: existing?.partnerStampDataUrl,
+            matricesJson: '',
+            slidesConfigJson: '',
+            excludedFieldsJson: ''
+          }
+        }
+      };
+    });
+    showToast('Champs, slides et matrices synchronisés à 100% avec les onglets (Dossiers, Planification, Suivi, RACI, PERT, Kanban).');
+  };
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white/70 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-gray-200 mb-4 shrink-0 text-sm">
-        <div className="flex-1">
-          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center">
-            <Filter className="w-3 h-3 mr-1 text-sky-500" /> 1. Filtrer par Axe Stratégique
-          </label>
-          <div className="relative">
-            <select 
-              className="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-800 text-sm font-semibold rounded-xl focus:ring-2 focus:ring-sky-500 focus:border-sky-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-              value={filterDashboardAxe}
-              onChange={(e) => { 
-                setFilterDashboardAxe(e.target.value); 
-                setFilterDashboardProj('FULL');
+  const handleUpdateCategorizedActors = (nextList: CategorizedActor[]) => {
+    updateActiveDossier(d => ({
+      ...d,
+      categorizedActors: nextList
+    }));
+  };
+
+  const handleOpenInternalActorProfileFromCategory = (actorName: string) => {
+    setSelectedCategoryActorName(actorName || userProfile.fullName);
+    setIsCategoryProfileModalOpen(true);
+  };
+
+  // Shared Macro Filter Bar (2x size on mobile portrait & landscape — Filters ONLY)
+  const renderMacroFilterBar = () => (
+    <div className="bg-white dark:bg-slate-900 rounded-md sm:rounded-xl border border-slate-200 dark:border-slate-800 p-1 sm:p-1.5 md:p-2.5 shadow-xs mb-1.5 sm:mb-3">
+      <div className="grid grid-cols-2 gap-1 sm:gap-2 items-center">
+        <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 md:px-2.5 md:py-1 rounded border border-slate-200 dark:border-slate-700 h-7 sm:h-7 md:h-auto">
+          <Filter className="hidden sm:block w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#0284c7] dark:text-[#90D5FF] shrink-0" />
+          <div className="flex-1 min-w-0">
+            <label className="hidden md:block text-[8px] font-bold uppercase text-slate-400 leading-none">
+              {language === 'EN' ? '1. Strategic Axis' : '1. Axe Stratégique'}
+            </label>
+            <select
+              value={filterAxeId}
+              onChange={e => {
+                setFilterAxeId(e.target.value);
+                setFilterProjectId('ALL');
               }}
+              className="w-full bg-transparent text-[13px] sm:text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none truncate leading-tight"
             >
-              <option value="FULL">Toutes les données (Vue Globale)</option>
-              {activeDossier?.axes?.map(axe => (
-                <option key={axe.id} value={axe.id}>{axe.name}</option>
+              <option value="ALL">
+                {language === 'EN'
+                  ? `Axis: All (${(activeDossier.axes || []).length})`
+                  : `Axe : Tous (${(activeDossier.axes || []).length})`}
+              </option>
+              {(activeDossier.axes || []).map(ax => (
+                <option key={ax.id} value={ax.id}>
+                  {ax.name}
+                </option>
               ))}
             </select>
-            <ChevronRight className="w-4 h-4 text-gray-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
           </div>
         </div>
-        <div className="flex-1">
-          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center">
-            <Filter className="w-3 h-3 mr-1 text-sky-500" /> 2. Filtrer par Projet OP
-          </label>
-          <div className="relative">
-            <select 
-              className="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-800 text-sm font-semibold rounded-xl focus:ring-2 focus:ring-sky-500 focus:border-sky-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-              value={filterDashboardProj}
-              onChange={(e) => setFilterDashboardProj(e.target.value)}
+
+        <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2 py-1 md:px-2.5 md:py-1 rounded border border-slate-200 dark:border-slate-700 h-7 sm:h-7 md:h-auto">
+          <Briefcase className="hidden sm:block w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#0284c7] dark:text-[#90D5FF] shrink-0" />
+          <div className="flex-1 min-w-0">
+            <label className="hidden md:block text-[8px] font-bold uppercase text-slate-400 leading-none">
+              {language === 'EN' ? '2. Operational Project' : '2. Projet Opérationnel'}
+            </label>
+            <select
+              value={filterProjectId}
+              onChange={e => setFilterProjectId(e.target.value)}
+              className="w-full bg-transparent text-[13px] sm:text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none truncate leading-tight"
             >
-              <option value="FULL">Tous les projets {filterDashboardAxe !== 'FULL' ? 'de cet axe' : ''}</option>
-              {allProjects
-                .filter(p => filterDashboardAxe === 'FULL' || p.axeId === filterDashboardAxe)
-                .map((proj, idx) => (
-                  <option key={proj.id} value={proj.id}>{idx + 1}. {proj.name}</option>
+              <option value="ALL">
+                {language === 'EN'
+                  ? `Project: All (${availableProjectsInFilter.length})`
+                  : `Projet : Tous (${availableProjectsInFilter.length})`}
+              </option>
+              {availableProjectsInFilter.map(pr => (
+                <option key={pr.id} value={pr.id}>
+                  {pr.name}
+                </option>
               ))}
             </select>
-            <ChevronRight className="w-4 h-4 text-gray-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
           </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-slate-100 border-l-4 border-slate-400 flex flex-col justify-center">
-          <p className="text-[10px] text-gray-400 uppercase font-black tracking-wider mb-1">Risques Totaux</p>
-          <p className="text-3xl font-black text-slate-800 leading-none">{stats.total}</p>
-        </div>
-        <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-slate-100 border-l-4 border-emerald-500 flex flex-col justify-center">
-          <p className="text-[10px] text-gray-400 uppercase font-black tracking-wider mb-1">Risques Traités</p>
-          <p className="text-3xl font-black text-emerald-600 leading-none">{stats.completed}</p>
-        </div>
-        <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-slate-100 border-l-4 border-red-500 flex flex-col justify-center">
-          <p className="text-[10px] text-gray-400 uppercase font-black tracking-wider mb-1">Risques Bloqués</p>
-          <p className="text-3xl font-black text-rose-600 leading-none">{stats.blocked}</p>
-        </div>
-        <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-slate-100 border-l-4 border-sky-400 flex flex-col justify-center">
-          <p className="text-[10px] text-gray-400 uppercase font-black tracking-wider mb-1">Risques Nouveaux</p>
-          <p className="text-3xl font-black text-sky-600 leading-none">{stats.todo}</p>
-        </div>
-      </div>
-
-      {/* Goulots d'étranglement / Alertes */}
-      {bottlenecks.length > 0 && (
-        <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-red-100 overflow-hidden">
-          <div className="bg-red-50/50 px-5 py-3 border-b border-red-100 flex justify-between items-center">
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="w-5 h-5 text-red-500 animate-pulse" />
-              <h3 className="font-bold text-red-900 text-xs md:text-sm uppercase tracking-wider">
-                Analyse Critique des Risques Majeurs non résolus ({bottlenecks.length})
-              </h3>
-            </div>
-            <span className="text-[10px] bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded-full">
-              Action requise immédiate
-            </span>
-          </div>
-          <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            {bottlenecks.map(b => (
-              <div key={b.id} className="p-3 bg-red-50/30 border border-red-100/80 rounded-xl flex flex-col justify-between hover:shadow-xs transition-shadow">
-                <div>
-                  <div className="flex justify-between items-start mb-1">
-                    <span className="bg-red-100 text-red-800 text-[9px] font-black px-1.5 py-0.5 rounded uppercase">
-                      {(b.taskOrMilestone || b.type) === 'jalon' ? 'Jalon Critique' : 'Risque non traité'}
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-bold max-w-[150px] truncate" title={b.projectName}>
-                      {b.projectName}
-                    </span>
-                  </div>
-                  <h4 className="font-bold text-slate-800 text-xs leading-snug">{b.name}</h4>
-                </div>
-
-                <div className="flex justify-between items-center pt-2 border-t border-red-100 mt-2 text-[10px]">
-                  <div className="flex items-center">
-                    <span className="font-bold text-slate-600">Resp: {b.assignee || '—'}</span>
-                  </div>
-                  <span className="text-slate-400 font-medium">
-                    Identifié le: {b.dateIdentification || b.startDate}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* GRILLE ANALYTIQUE ENTIÈREMENT ALIGNÉE SUR LA GOUVERNANCE RISQUES (6 GRAPHES) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        
-        {/* Graphique 1 : Répartition par Criticité */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Graphe 1</h3>
-            <h4 className="text-sm font-bold text-slate-800 leading-snug">Répartition par Niveau de Criticité</h4>
-          </div>
-          <div className="h-48 w-full my-3 flex items-center justify-center">
-            {stats.total > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie 
-                    data={computedDashboardStats.criticitePie} 
-                    cx="50%" 
-                    cy="50%" 
-                    innerRadius={55} 
-                    outerRadius={75} 
-                    paddingAngle={3} 
-                    dataKey="value"
-                  >
-                    {computedDashboardStats.criticitePie.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <span className="text-xs text-slate-400 italic">Aucun risque pour le moment</span>
-            )}
-          </div>
-          <div className="space-y-1.5 border-t border-slate-100 pt-3">
-            {computedDashboardStats.criticitePie.map((item, idx) => (
-              <div key={idx} className="flex justify-between items-center text-xs">
-                <span className="flex items-center text-slate-600">
-                  <span className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: item.color }}></span>
-                  {item.name}
-                </span>
-                <span className="font-bold text-slate-800">{item.value} ({stats.total > 0 ? Math.round((item.value / stats.total) * 100) : 0}%)</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Graphique 2 : Nature du Risque (Analyse PESTEL) */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Graphe 2</h3>
-            <h4 className="text-sm font-bold text-slate-800 leading-snug">Nature du Risque (Secteurs PESTEL)</h4>
-          </div>
-          <div className="h-48 w-full my-3">
-            {stats.total > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={computedDashboardStats.natureBar} layout="vertical" margin={{ left: -10, right: 10, top: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} />
-                  <YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 9, fontWeight: 'bold' }} />
-                  <RechartsTooltip />
-                  <Bar dataKey="Risques" fill="#3b82f6" radius={[0, 4, 4, 0]}>
-                    {computedDashboardStats.natureBar.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">Données insuffisantes</div>
-            )}
-          </div>
-          <div className="text-[10px] text-center text-slate-400 font-medium border-t border-slate-100 pt-3">
-            Ventilation basée sur les 6 piliers réglementaires & stratégiques
-          </div>
-        </div>
-
-        {/* Graphique 3 : Conséquence si avéré (QCD Triangle) */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Graphe 3</h3>
-            <h4 className="text-sm font-bold text-slate-800 leading-snug">Impact Majeur (Qualité-Coût-Délai)</h4>
-          </div>
-          <div className="h-48 w-full my-3 flex items-center justify-center">
-            {stats.total > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie 
-                    data={computedDashboardStats.consequencePie} 
-                    cx="50%" 
-                    cy="50%" 
-                    innerRadius={55} 
-                    outerRadius={75} 
-                    paddingAngle={3} 
-                    dataKey="value"
-                  >
-                    {computedDashboardStats.consequencePie.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <span className="text-xs text-slate-400 italic">Aucun risque pour le moment</span>
-            )}
-          </div>
-          <div className="space-y-1.5 border-t border-slate-100 pt-3">
-            {computedDashboardStats.consequencePie.map((item, idx) => (
-              <div key={idx} className="flex justify-between items-center text-xs">
-                <span className="flex items-center text-slate-600">
-                  <span className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: item.color }}></span>
-                  {item.name}
-                </span>
-                <span className="font-bold text-slate-800">{item.value} ({stats.total > 0 ? Math.round((item.value / stats.total) * 100) : 0}%)</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Graphique 4 : Tendance d'Évolution */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Graphe 4</h3>
-            <h4 className="text-sm font-bold text-slate-800 leading-snug">Tendance d'Évolution des Risques</h4>
-          </div>
-          <div className="h-48 w-full my-3 flex items-center justify-center">
-            {stats.total > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie 
-                    data={computedDashboardStats.tendancePie} 
-                    cx="50%" 
-                    cy="50%" 
-                    innerRadius={0} 
-                    outerRadius={75} 
-                    paddingAngle={0} 
-                    dataKey="value"
-                  >
-                    {computedDashboardStats.tendancePie.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <span className="text-xs text-slate-400 italic">Aucun risque enregistré</span>
-            )}
-          </div>
-          <div className="space-y-1.5 border-t border-slate-100 pt-3">
-            {computedDashboardStats.tendancePie.map((item, idx) => (
-              <div key={idx} className="flex justify-between items-center text-xs">
-                <span className="flex items-center text-slate-600">
-                  <span className="w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: item.color }}></span>
-                  {item.name}
-                </span>
-                <span className="font-bold text-slate-800">{item.value} ({stats.total > 0 ? Math.round((item.value / stats.total) * 100) : 0}%)</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Graphique 5 : Gravité (Impact) */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Graphe 5</h3>
-            <h4 className="text-sm font-bold text-slate-800 leading-snug">Gravité Constatée (Impact)</h4>
-          </div>
-          <div className="h-48 w-full my-3">
-            {stats.total > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={computedDashboardStats.graviteBar} margin={{ left: -15, right: 10, top: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                  <YAxis allowDecimals={false} />
-                  <RechartsTooltip />
-                  <Bar dataKey="Nombre" fill="#3b82f6" radius={[4, 4, 0, 0]}>
-                    {computedDashboardStats.graviteBar.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">Aucune donnée</div>
-            )}
-          </div>
-          <div className="text-[10px] text-center text-slate-400 font-medium border-t border-slate-100 pt-3">
-            Classification des incidents selon les seuils financiers & d'échéances
-          </div>
-        </div>
-
-        {/* Graphique 6 : Probabilité de Matérialisation */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
-          <div>
-            <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Graphe 6</h3>
-            <h4 className="text-sm font-bold text-slate-800 leading-snug">Probabilité de Matérialisation</h4>
-          </div>
-          <div className="h-48 w-full my-3">
-            {stats.total > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={computedDashboardStats.probabiliteBar} margin={{ left: -15, right: 10, top: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                  <YAxis allowDecimals={false} />
-                  <RechartsTooltip />
-                  <Bar dataKey="Fréquence" fill="#3F9384" radius={[4, 4, 0, 0]}>
-                    {computedDashboardStats.probabiliteBar.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-xs text-slate-400 italic">Aucune donnée</div>
-            )}
-          </div>
-          <div className="text-[10px] text-center text-slate-400 font-medium border-t border-slate-100 pt-3">
-            Estimation de l'occurrence selon la méthodologie d'audit interne
-          </div>
-        </div>
-
-      </div>
-
-      {/* Profil Global par Projet d'origine */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm mt-6">
-        <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center">
-          <Activity className="w-5 h-5 mr-2 text-sky-500" /> Profil Synthétique des Portefeuilles d'Activités
-        </h3>
-        <div className="h-80">
-          {projectStats.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={projectStats} margin={{ top: 20, right: 30, left: 10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="shortName" tick={{ fontSize: 11, fontWeight: 'bold' }} />
-                <YAxis allowDecimals={false} />
-                <RechartsTooltip cursor={{fill: 'transparent'}} />
-                <Legend verticalAlign="top" height={36}/>
-                <Bar dataKey="total" name="Total Risques" fill="#64748b" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Traités" stackId="a" fill="#10B981" radius={[0, 0, 4, 4]} />
-                <Bar dataKey="En cours" stackId="a" fill="#0ea5e9" />
-                <Bar dataKey="Bloqués" stackId="a" fill="#f43f5e" />
-                <Bar dataKey="Nouveaux" stackId="a" fill="#9CA3AF" />
-                <Bar dataKey="Critiques" name="Critiques / Très Critiques" fill="#dc2626" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-full flex items-center justify-center text-gray-500 italic">Aucun projet à analyser</div>
-          )}
         </div>
       </div>
     </div>
   );
 
-  const [selectedCell, setSelectedMatrixCell] = useState<{ prob: number; grav: number } | null>(null);
+  // ============================================================================
+  // SLIDEBAR MENU (Burger ☰) — Portefeuille / Dossier selector ONLY + Ordered Tabs
+  // ============================================================================
+  const renderSlidebar = () => {
+    // STRICT SECURITY & DISSOCIATION:
+    // - Never mount slidebar if not authenticated, if PIN is not verified, if device is locked, or if drawer closed.
+    // - Super Admin ('fabien.frikupgeneration@gmail.com') is strictly dissociated from the classic User workspace,
+    //   so the classic User Slidebar is ONLY available to authenticated & PIN-verified Regular Users.
+    if (!isRegularUserUnlocked || !isSlidebarOpen) return null;
 
-  const getProbValue = (p?: string) => {
-    const val = (p || '').toLowerCase().trim();
-    if (val.includes('très') || val.includes('tres')) return 4;
-    if (val.includes('peu')) return 2;
-    if (val.includes('improbable')) return 1;
-    return 3;
-  };
-
-  const getGravValue = (g?: string) => {
-    const val = (g || '').toLowerCase().trim();
-    if (val.includes('catastrophique')) return 4;
-    if (val.includes('grave')) return 3;
-    if (val.includes('majeur')) return 2;
-    return 1;
-  };
-
-  const renderMatriceRisques = () => {
-    let filteredProjects = allProjects;
-    if (filterMatriceAxe !== 'FULL') filteredProjects = filteredProjects.filter(p => p.axeId === filterMatriceAxe);
-    if (filterMatriceProj !== 'FULL') filteredProjects = filteredProjects.filter(p => p.id === filterMatriceProj);
-    const validProjIds = filteredProjects.map(p => p.id);
-
-    const risksForMatrix = allTasks.filter(t => validProjIds.includes(t.projectId || ''));
-
-    const matrixGrid = [
-      // Row 4: Très probable
+    // Reorganized into the exact 4 groups with spacing between groups (Strictly Regular User modules):
+    // Group 1: Accueil & Présentation, Profil Utilisateur
+    // Group 2: Dossiers & Projets, Fiche Technique & Résumé Exécutif, Générateur de Documents
+    // Group 3: Tableau de Bord Décisionnel, Réseau PERT, Tableau Kanban Interactif, Diagramme de Gantt & Arbre
+    // Group 4: Planification, Suivi des tâches, RACI
+    const navGroups: Array<
+      Array<{
+        id: string;
+        label: string;
+        icon: React.ReactNode;
+        badge?: string;
+      }>
+    > = [
       [
-        { label: 'Très probable (4)', probVal: 4, gravVal: 1, color: 'bg-amber-400 hover:bg-amber-500 text-slate-800' },
-        { label: 'Très probable (4)', probVal: 4, gravVal: 2, color: 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse' },
-        { label: 'Très probable (4)', probVal: 4, gravVal: 3, color: 'bg-rose-500 hover:bg-rose-600 text-white animate-pulse' },
-        { label: 'Très probable (4)', probVal: 4, gravVal: 4, color: 'bg-red-700 hover:bg-red-800 text-white animate-pulse' }
+        { id: 'accueil', label: t.nav.accueil, icon: <Home className="w-4 h-4" /> },
+        {
+          id: 'profil',
+          label: t.nav.profil,
+          icon: <User className="w-4 h-4" />
+        }
       ],
-      // Row 3: Probable
       [
-        { label: 'Probable (3)', probVal: 3, gravVal: 1, color: 'bg-green-400 hover:bg-green-500 text-slate-800' },
-        { label: 'Probable (3)', probVal: 3, gravVal: 2, color: 'bg-amber-400 hover:bg-amber-500 text-slate-800' },
-        { label: 'Probable (3)', probVal: 3, gravVal: 3, color: 'bg-rose-500 hover:bg-rose-600 text-white' },
-        { label: 'Probable (3)', probVal: 3, gravVal: 4, color: 'bg-red-700 hover:bg-red-800 text-white animate-pulse' }
+        {
+          id: 'projects',
+          label: t.nav.projects,
+          icon: <FolderOpen className="w-4 h-4" />,
+          badge: `${dossiers.length}`
+        },
+        {
+          id: 'fiche',
+          label: t.nav.fiche,
+          icon: <FileText className="w-4 h-4" />
+        },
+        {
+          id: 'docgen',
+          label: t.nav.docgen,
+          icon: <FileSpreadsheet className="w-4 h-4" />,
+          badge: '10 Docs'
+        }
       ],
-      // Row 2: Peu probable
       [
-        { label: 'Peu probable (2)', probVal: 2, gravVal: 1, color: 'bg-emerald-500 hover:bg-emerald-600 text-white' },
-        { label: 'Peu probable (2)', probVal: 2, gravVal: 2, color: 'bg-green-400 hover:bg-green-500 text-slate-800' },
-        { label: 'Peu probable (2)', probVal: 2, gravVal: 3, color: 'bg-amber-500 hover:bg-amber-600 text-white' },
-        { label: 'Peu probable (2)', probVal: 2, gravVal: 4, color: 'bg-rose-500 hover:bg-rose-600 text-white' }
+        {
+          id: 'risk_dashboard',
+          label: t.nav.risk_dashboard,
+          icon: <Activity className="w-4 h-4" />
+        },
+        {
+          id: 'pert',
+          label: t.nav.pert,
+          icon: <Network className="w-4 h-4" />
+        },
+        {
+          id: 'kanban',
+          label: t.nav.kanban,
+          icon: <Kanban className="w-4 h-4" />
+        },
+        {
+          id: 'gantt',
+          label: t.nav.gantt,
+          icon: <GanttChart className="w-4 h-4" />
+        }
       ],
-      // Row 1: Improbable
       [
-        { label: 'Improbable (1)', probVal: 1, gravVal: 1, color: 'bg-emerald-500 hover:bg-emerald-600 text-white' },
-        { label: 'Improbable (1)', probVal: 1, gravVal: 2, color: 'bg-emerald-500 hover:bg-emerald-600 text-white' },
-        { label: 'Improbable (1)', probVal: 1, gravVal: 3, color: 'bg-green-400 hover:bg-green-500 text-slate-800' },
-        { label: 'Improbable (1)', probVal: 1, gravVal: 4, color: 'bg-amber-500 hover:bg-amber-600 text-white' }
+        {
+          id: 'planification',
+          label: t.nav.planification,
+          icon: <Calendar className="w-4 h-4" />,
+          badge: `${allDossierTasks.length}`
+        },
+        {
+          id: 'risk_operations',
+          label: t.nav.risk_operations,
+          icon: <ListChecks className="w-4 h-4" />
+        },
+        {
+          id: 'raci',
+          label: t.nav.raci,
+          icon: <Users className="w-4 h-4" />,
+          badge: 'R-A-C-I'
+        },
+        {
+          id: 'categorie',
+          label: t.nav.categorie,
+          icon: <Layers className="w-4 h-4" />,
+          badge: '5 Cat.'
+        }
       ]
     ];
 
-    const clickedRisks = selectedCell 
-      ? risksForMatrix.filter(t => getProbValue(t.probabilite) === selectedCell.prob && getGravValue(t.gravite) === selectedCell.grav)
-      : [];
-
     return (
-      <div className="space-y-6 animate-in fade-in duration-500 pb-10 font-sans">
-        <div className="flex justify-between items-center border-b pb-1 border-sky-200 shrink-0 mb-4">
-          <h2 className="text-lg font-bold text-gray-800 flex items-center">
-            <Grid className="w-5 h-5 mr-2 text-sky-500" /> 
-            Matrice des Risques Opérationnels (ISO 31000)
-          </h2>
-        </div>
+      <div className="fixed inset-0 z-50 flex">
+        <div
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs transition-opacity"
+          onClick={() => setIsSlidebarOpen(false)}
+        />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-4 shrink-0 text-sm">
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1 text-sky-500" /> 1. Filtrer par Axe Stratégique
-            </label>
-            <select 
-              className="w-full bg-gray-50 border border-gray-300 text-gray-800 text-xs font-semibold rounded-xl p-2 cursor-pointer outline-none"
-              value={filterMatriceAxe}
-              onChange={(e) => { 
-                setFilterMatriceAxe(e.target.value); 
-                setFilterMatriceProj('FULL');
-              }}
-            >
-              <option value="FULL">Toutes les données (Vue Globale)</option>
-              {activeDossier?.axes?.map(axe => (
-                <option key={axe.id} value={axe.id}>{axe.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1 text-sky-500" /> 2. Filtrer par Projet OP
-            </label>
-            <select 
-              className="w-full bg-gray-50 border border-gray-300 text-gray-800 text-xs font-semibold rounded-xl p-2 cursor-pointer outline-none"
-              value={filterMatriceProj}
-              onChange={(e) => setFilterMatriceProj(e.target.value)}
-            >
-              <option value="FULL">Tous les projets {filterMatriceAxe !== 'FULL' ? 'de cet axe' : ''}</option>
-              {allProjects
-                .filter(p => filterMatriceAxe === 'FULL' || p.axeId === filterMatriceAxe)
-                .map((proj, idx) => (
-                  <option key={proj.id} value={proj.id}>{idx + 1}. {proj.name}</option>
-                ))}
-            </select>
-          </div>
-        </div>
+        <aside className="relative z-10 w-80 sm:w-96 max-w-[92vw] h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col">
+          {/* Sticky Top Bar: Action Icons + CSV Import/Export right next to Theme Toggle + Close Button */}
+          <div className="relative px-3.5 py-2.5 bg-orange-800 text-white flex items-center justify-between border-b border-orange-900 shrink-0 z-30">
+            <div className="flex items-center gap-1.5">
+              {/* 1. Import JSON */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title={t.actions.importJson}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-orange-400 hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+              </button>
+              {/* 2. Save / Overwrite JSON */}
+              <button
+                onClick={handleSaveOrExportJSON}
+                title={t.actions.saveJson}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-orange-400 hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+              </button>
+              {/* 3. Export PDF Fiche Technique */}
+              <button
+                onClick={() =>
+                  generateDirectWhitePDF(
+                    activeDossier,
+                    userProfile,
+                    currency,
+                    language
+                  )
+                }
+                title={t.actions.exportPdf}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-orange-400 hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+              {/* Connecter le dossier local faab-plan */}
+              <button
+                type="button"
+                onClick={async () => {
+                  const h = await pickFaabPlanFolder();
+                  if (h) {
+                    showToast(
+                      language === 'EN'
+                        ? `Local workspace folder connected: ${h.name} -> faab-plan/${activeDossier.name}/`
+                        : `Dossier local connecté : ${h.name} -> faab-plan/${activeDossier.name}/`
+                    );
+                  } else {
+                    showToast(
+                      language === 'EN'
+                        ? 'Direct disk access cancelled or restricted by browser.'
+                        : 'Accès dossier local annulé ou restreint par le navigateur.'
+                    );
+                  }
+                }}
+                title={
+                  language === 'EN'
+                    ? 'Connect local folder (faab-plan) on your computer'
+                    : 'Connecter le dossier local sur mon ordinateur (faab-plan)'
+                }
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-orange-400 hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <FolderOpen className="w-4 h-4" />
+              </button>
+              {/* 4. Theme Toggle (Dark / Light Mode) */}
+              <button
+                onClick={() =>
+                  setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))
+                }
+                title={t.actions.theme}
+                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-orange-400 hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-4 h-4 text-orange-300" />
+                ) : (
+                  <Moon className="w-4 h-4" />
+                )}
+              </button>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Grille Thermique interactive */}
-          <div className="lg:col-span-7 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
-            <div className="text-center mb-4">
-              <h3 className="font-bold text-slate-800 text-sm">Cartographie Probabilité / Gravité (QCD)</h3>
-              <p className="text-[10px] text-slate-400">Cliquez sur une cellule pour voir la liste des incidents opérationnels associés</p>
+              {/* Scanner QR Code / Code-Barres Badge (Uniquement dans l'app, jamais sur l'accueil) */}
+              {activeTab !== 'accueil' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCsvMenuOpen(null);
+                    setIsSlidebarOpen(false);
+                    setIsGlobalScannerOpen(true);
+                  }}
+                  title={
+                    language === 'EN'
+                      ? 'Scan QR Code / Badge Barcode'
+                      : 'Scanner un QR Code / Badge'
+                  }
+                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-orange-400 hover:text-slate-950 flex items-center justify-center transition-colors cursor-pointer text-orange-200"
+                >
+                  <QrCode className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* 5. Icon 1 right of Theme Toggle: Importer CSV (Icon only, no text) */}
+              <button
+                type="button"
+                onClick={() =>
+                  setCsvMenuOpen(prev =>
+                    prev === 'slidebar-import' ? null : 'slidebar-import'
+                  )
+                }
+                title="Importer CSV"
+                aria-label="Importer CSV"
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                  csvMenuOpen === 'slidebar-import'
+                    ? 'bg-orange-400 text-slate-950'
+                    : 'bg-white/10 hover:bg-orange-400 hover:text-slate-950'
+                }`}
+              >
+                <FileUp className="w-4 h-4" />
+              </button>
+
+              {/* 6. Icon 2 right of Theme Toggle: Exporter CSV (Icon only, no text) */}
+              <button
+                type="button"
+                onClick={() =>
+                  setCsvMenuOpen(prev =>
+                    prev === 'slidebar-export' ? null : 'slidebar-export'
+                  )
+                }
+                title="Exporter CSV"
+                aria-label="Exporter CSV"
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                  csvMenuOpen === 'slidebar-export'
+                    ? 'bg-orange-400 text-slate-950'
+                    : 'bg-white/10 hover:bg-orange-400 hover:text-slate-950'
+                }`}
+              >
+                <FileDown className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="flex">
-              {/* Axe Y Label */}
-              <div className="flex flex-col justify-center items-center mr-2">
-                <span className="transform -rotate-90 text-[10px] font-black text-slate-400 tracking-widest uppercase w-36 text-center">
-                  ← PROBABILITÉ (Fréquence)
-                </span>
+            <button
+              onClick={() => {
+                setCsvMenuOpen(null);
+                setIsSlidebarOpen(false);
+              }}
+              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-rose-500 text-white flex items-center justify-center transition-colors cursor-pointer"
+              title={language === 'EN' ? 'Close menu' : 'Fermer le menu'}
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Dropdown Menu Importer CSV — Contenu strictement dans les limites du panneau latéral */}
+            {csvMenuOpen === 'slidebar-import' && (
+              <div className="absolute left-2 right-2 top-full mt-1.5 max-w-[calc(100vw-24px)] rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xl border-2 border-[#0284c7] dark:border-[#90D5FF] p-1.5 z-[9999] whitespace-normal">
+                <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-[#0c4a6e] dark:text-[#90D5FF] border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <span>
+                    {language === 'EN'
+                      ? 'Import a CSV file (UTF-8)'
+                      : 'Importer un fichier CSV (UTF-8)'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCsvMenuOpen(null)}
+                    className="text-slate-400 hover:text-slate-700 dark:hover:text-white font-bold cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => csvPlanInputRef.current?.click()}
+                  className="w-full px-2.5 py-2 text-left text-[11px] font-extrabold hover:bg-sky-50 dark:hover:bg-sky-950/60 rounded-lg flex items-start gap-2 transition-colors cursor-pointer whitespace-normal break-words leading-snug"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {language === 'EN'
+                      ? 'Import Planning (Macroplanning) from CSV'
+                      : 'Importer la Planification (Macroplanning) depuis un CSV'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => csvRaciInputRef.current?.click()}
+                  className="w-full px-2.5 py-2 text-left text-[11px] font-extrabold hover:bg-sky-50 dark:hover:bg-sky-950/60 rounded-lg flex items-start gap-2 border-t border-slate-100 dark:border-slate-800 transition-colors cursor-pointer whitespace-normal break-words leading-snug"
+                >
+                  <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {language === 'EN'
+                      ? 'Import RACI Matrix from CSV'
+                      : 'Importer la Matrice RACI depuis un CSV'}
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {/* Dropdown Menu Exporter CSV — Contenu strictement dans les limites du panneau latéral */}
+            {csvMenuOpen === 'slidebar-export' && (
+              <div className="absolute left-2 right-2 top-full mt-1.5 max-w-[calc(100vw-24px)] rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xl border-2 border-[#0284c7] dark:border-[#90D5FF] p-1.5 z-[9999] whitespace-normal">
+                <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-[#0c4a6e] dark:text-[#90D5FF] border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <span>
+                    {language === 'EN'
+                      ? 'Export as Excel CSV (UTF-8 BOM)'
+                      : 'Exporter en CSV Excel (UTF-8 BOM)'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCsvMenuOpen(null)}
+                    className="text-slate-400 hover:text-slate-700 dark:hover:text-white font-bold cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportPlanificationCSV}
+                  className="w-full px-2.5 py-2 text-left text-[11px] font-extrabold hover:bg-sky-50 dark:hover:bg-sky-950/60 rounded-lg flex items-start gap-2 transition-colors cursor-pointer whitespace-normal break-words leading-snug"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {language === 'EN'
+                      ? 'Export Planning (Macroplanning) as CSV'
+                      : 'Exporter la Planification (Macroplanning) en CSV'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportRaciCSV}
+                  className="w-full px-2.5 py-2 text-left text-[11px] font-extrabold hover:bg-sky-50 dark:hover:bg-sky-950/60 rounded-lg flex items-start gap-2 border-t border-slate-100 dark:border-slate-800 transition-colors cursor-pointer whitespace-normal break-words leading-snug"
+                >
+                  <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {language === 'EN'
+                      ? 'Export RACI Matrix as CSV'
+                      : 'Exporter la Matrice RACI en CSV'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await downloadProgramFolderZip(activeDossier.name);
+                    setCsvMenuOpen(null);
+                    if (ok) {
+                      showToast(
+                        language === 'EN'
+                          ? `Complete folder "faab-plan/${activeDossier.name}/" exported as ZIP.`
+                          : `Dossier complet "faab-plan/${activeDossier.name}/" exporté en archive ZIP.`
+                      );
+                    } else {
+                      showToast(
+                        language === 'EN'
+                          ? `Please save at least one document for "${activeDossier.name}" first.`
+                          : `Veuillez d'abord enregistrer au moins un document pour le programme "${activeDossier.name}".`
+                      );
+                    }
+                  }}
+                  className="w-full px-2.5 py-2 text-left text-[11px] font-extrabold hover:bg-sky-50 dark:hover:bg-sky-950/60 rounded-lg flex items-start gap-2 border-t border-slate-100 dark:border-slate-800 transition-colors cursor-pointer whitespace-normal break-words leading-snug"
+                >
+                  <FolderOpen className="w-4 h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {language === 'EN'
+                      ? `Export entire folder: faab-plan/${activeDossier.name}/*.zip`
+                      : `Exporter tout le dossier : faab-plan/${activeDossier.name}/*.zip`}
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Executive Google Auth Status in Slidebar */}
+          <AuthStatusButton
+            user={authUser}
+            isAuthLoading={isAuthLoading}
+            isSigningIn={isSigningIn}
+            onSignIn={handleGoogleSignIn}
+            onSignOut={handleSignOut}
+            language={language}
+            variant="slidebar"
+            onLockDevice={() => {
+              setIsSlidebarOpen(false);
+              setIsDeviceLocked(true);
+              setSuperAdminAuthModalStep('device_locked');
+              setIsSuperAdminAuthModalOpen(true);
+            }}
+          />
+
+          {/* SCROLLABLE CONTAINER: Logo + Description below the icons scrolls up with mobile swipe! */}
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800">
+            {/* Scrollable Logo & Brand Header */}
+            <div className="px-3 py-0.5 sm:py-1 bg-gradient-to-b from-orange-700 to-amber-950 text-white">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="shrink-0 flex items-center justify-center -my-3 sm:-my-4">
+                  <AppLogo className="w-32 h-32 sm:w-40 sm:h-40 drop-shadow-lg" />
+                </div>
+                <div className="min-w-0 py-0.5">
+                  <div className="inline-block px-1.5 py-0.2 rounded bg-orange-400 text-slate-950 text-[8.5px] font-black uppercase tracking-widest mb-0.5">
+                    {language === 'EN' ? 'UNIVERSAL PLATFORM' : 'PLATEFORME UNIVERSELLE'}
+                  </div>
+                  <h2 className="text-base font-black tracking-tight uppercase truncate leading-tight">
+                    FAAB RISK
+                  </h2>
+                  <p className="text-[10.5px] text-orange-200 font-medium leading-tight">
+                    {language === 'EN'
+                      ? 'Strategic Risk Governance, PERT Network, RACI & KPIs'
+                      : 'Gouvernance des Risques Opérationnels, Réseau PERT, RACI & KPIs'}
+                  </p>
+                </div>
+              </div>
+              {lastJsonFileName && (
+                <div className="mt-1 px-2 py-0.5 rounded bg-white/10 text-[9.5px] font-mono text-orange-200 truncate">
+                  {language === 'EN' ? 'Active JSON:' : 'JSON actif :'} {lastJsonFileName}
+                </div>
+              )}
+            </div>
+
+            {/* Contenu du menu déroulant sous le header : taille de police 12px en mode mobile */}
+            <div className="slidebar-menu-content divide-y divide-slate-200 dark:divide-slate-800">
+              {/* Sélecteur de Portefeuille / Dossier UNIQUEMENT */}
+              <div className="p-2.5 sm:p-3 bg-orange-50/60 dark:bg-slate-800/50 space-y-1 sm:space-y-1.5">
+                <label className="block text-[12px] sm:text-[10px] font-black uppercase tracking-wider text-orange-600 dark:text-orange-300 leading-none">
+                  {language === 'EN' ? 'Portfolio / Dossier' : 'Portefeuille / Dossier'}
+                </label>
+                <select
+                  value={activeDossier.id}
+                  onChange={e => {
+                    setActiveDossierId(e.target.value);
+                    setFilterAxeId('ALL');
+                    setFilterProjectId('ALL');
+                    const found = dossiers.find(d => d.id === e.target.value);
+                    if (found)
+                      showToast(
+                        language === 'EN'
+                          ? `Selected dossier: ${found.name}`
+                          : `Dossier sélectionné : ${found.name}`
+                      );
+                  }}
+                  className="w-full h-8 sm:h-auto bg-white dark:bg-slate-900 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg border border-orange-300 dark:border-slate-700 text-[12px] sm:text-xs font-extrabold text-slate-900 dark:text-white focus:outline-none truncate"
+                >
+                  {dossiers.map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              {/* Conteneur Grille */}
-              <div className="flex-1">
-                {matrixGrid.map((row, rowIdx) => (
-                  <div key={rowIdx} className="flex gap-2 mb-2">
-                    {/* Axe Y graduation */}
-                    <div className="w-24 flex items-center justify-end pr-2 text-[10px] font-bold text-slate-500">
-                      {row[0].label.split('(')[0]}
-                    </div>
-
-                    {/* Cellules */}
-                    {row.map((cell, colIdx) => {
-                      const matchingCount = risksForMatrix.filter(t => 
-                        getProbValue(t.probabilite) === cell.probVal && 
-                        getGravValue(t.gravite) === cell.gravVal
-                      ).length;
-
-                      const isSelected = selectedCell && selectedCell.prob === cell.probVal && selectedCell.grav === cell.gravVal;
-
+              {/* Navigation Modules organized into 4 groups with spacing between each group */}
+              <div className="p-3 space-y-4">
+                {navGroups.map((group, groupIdx) => (
+                  <div
+                    key={groupIdx}
+                    className={`space-y-1 ${
+                      groupIdx > 0
+                        ? 'pt-3 border-t border-slate-200/80 dark:border-slate-800'
+                        : ''
+                    }`}
+                  >
+                    {group.map(item => {
+                      const isActive = activeTab === item.id;
                       return (
-                        <div 
-                          key={colIdx} 
-                          onClick={() => setSelectedMatrixCell({ prob: cell.probVal, grav: cell.gravVal })}
-                          className={`flex-1 aspect-[4/3] rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-300 shadow-xs border ${cell.color} ${
-                            isSelected ? 'ring-4 ring-sky-500 scale-105 shadow-md border-white' : 'border-transparent hover:scale-102'
+                        <button
+                          key={item.id}
+                          onClick={() => navigateTo(item.id)}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-[12px] sm:text-xs font-bold transition-all cursor-pointer ${
+                            isActive
+                              ? 'bg-orange-600 text-white shadow-xs'
+                              : 'text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-slate-800'
                           }`}
                         >
-                          <span className="text-xl font-black">{matchingCount || '0'}</span>
-                          <span className="text-[8px] uppercase font-black opacity-80 mt-0.5">Risque{matchingCount > 1 ? 's' : ''}</span>
-                        </div>
+                          <span className="flex items-center gap-2.5 truncate">
+                            <span
+                              className={
+                                isActive ? 'text-orange-100' : 'text-orange-600'
+                              }
+                            >
+                              {item.icon}
+                            </span>
+                            <span className="truncate text-[12px] sm:text-xs">{item.label}</span>
+                          </span>
+                          {item.badge && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[12px] sm:text-[10px] font-black ${
+                                isActive
+                                  ? 'bg-orange-300 text-slate-950'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
                       );
                     })}
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    );
+  };
 
-                {/* Axe X Graduation */}
-                <div className="flex mt-2">
-                  <div className="w-24"></div>
-                  <div className="flex-1 flex gap-2">
-                    {['Mineur (1)', 'Majeur (2)', 'Grave (3)', 'Catastrophique (4)'].map((label, idx) => (
-                      <div key={idx} className="flex-1 text-center text-[10px] font-bold text-slate-500">
-                        {label}
-                      </div>
+  // ============================================================================
+  // VIEW: TABLEAU DE BORD DÉCISIONNEL (Exact 2 Charts from User Screenshot!)
+  // ============================================================================
+  const renderDashboardView = () => {
+    const delayedRows = flatTaskRows.filter(
+      r =>
+        r.metrics.effectiveStatus === 'Bloqué' ||
+        r.metrics.ecartFinDays > 0 ||
+        r.metrics.ecartDebutDays > 0
+    );
+
+    // Prepare per-project operational breakdown for Chart 1
+    const projectChartData = filteredProjects.map(proj => {
+      const pTasks = proj.tasks || [];
+      let done = 0;
+      let inProgress = 0;
+      let todo = 0;
+      let blocked = 0;
+      let late = 0;
+
+      pTasks.forEach(tk => {
+        const m = computeTaskMetrics(tk, todayISO);
+        if (m.effectiveStatus === 'Terminé') done++;
+        else if (m.effectiveStatus === 'En cours') inProgress++;
+        else if (m.effectiveStatus === 'Bloqué') blocked++;
+        else todo++;
+
+        if (m.ecartFinDays > 0 || m.ecartDebutDays > 0) {
+          late++;
+        }
+      });
+
+      return {
+        id: proj.id,
+        name: proj.name,
+        done,
+        inProgress,
+        todo,
+        blocked,
+        total: pTasks.length,
+        late
+      };
+    });
+
+    const maxBarValue = Math.max(
+      8,
+      ...projectChartData.map(d => Math.max(d.total, d.late, 1))
+    );
+    const yAxisMax = Math.ceil(maxBarValue / 2) * 2;
+    const yTicks = [
+      0,
+      Math.round(yAxisMax * 0.25),
+      Math.round(yAxisMax * 0.5),
+      Math.round(yAxisMax * 0.75),
+      yAxisMax
+    ];
+
+    // Prepare Donut Chart segments for Chart 2 ("Répartition par Statut")
+    const totalActiveOps = allDossierTasks.length;
+    const donutSegments = [
+      {
+        label: language === 'EN' ? 'Blocked' : 'Bloquées',
+        count: statusCounts.Bloqué,
+        color: '#ef4444'
+      },
+      {
+        label: language === 'EN' ? 'In Progress' : 'En cours',
+        count: statusCounts['En cours'],
+        color: '#0ea5e9'
+      },
+      {
+        label: language === 'EN' ? 'Completed' : 'Terminées',
+        count: statusCounts.Terminé,
+        color: '#10b981'
+      },
+      {
+        label: language === 'EN' ? 'To Do' : 'À faire',
+        count: statusCounts['À faire'],
+        color: '#94a3b8'
+      }
+    ];
+
+    const donutRadius = 64;
+    const donutCircumference = 2 * Math.PI * donutRadius;
+    let cumulativeFraction = 0;
+
+    return (
+      <div className="space-y-2.5 sm:space-y-5">
+        {renderMacroFilterBar()}
+
+        {/* 4 KPI Cards (Reduced size & font-size on mobile!) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-3">
+          <div className="bg-white dark:bg-slate-900 p-2 sm:p-4 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 border-l-3 sm:border-l-4 border-l-orange-600 shadow-xs">
+            <div className="flex items-center justify-between text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight">
+              <span className="truncate">
+                {language === 'EN' ? 'Axes & Projects' : 'Axes & Projets'}
+              </span>
+              <Layers className="w-3 h-3 sm:w-4 sm:h-4 text-orange-600 shrink-0" />
+            </div>
+            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-slate-900 dark:text-white leading-tight truncate">
+              {(activeDossier.axes || []).length} Axes /{' '}
+              {availableProjectsInFilter.length} Proj.
+            </div>
+            <div className="mt-0.5 sm:mt-1 text-[8px] sm:text-[11px] text-slate-500 truncate leading-tight">
+              Dossier : <strong className="text-orange-600">{activeDossier.name}</strong>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 p-2 sm:p-4 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 border-l-3 sm:border-l-4 border-l-orange-500 shadow-xs">
+            <div className="flex items-center justify-between text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight">
+              <span className="truncate">
+                {language === 'EN' ? 'Activities & Milestones' : 'Activités & Jalons'}
+              </span>
+              <Target className="w-3 h-3 sm:w-4 sm:h-4 text-orange-600 shrink-0" />
+            </div>
+            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-slate-900 dark:text-white leading-tight truncate">
+              {allDossierTasks.length} {language === 'EN' ? 'Item(s)' : 'Élément(s)'}
+            </div>
+            <div className="mt-0.5 sm:mt-1 text-[8px] sm:text-[11px] text-emerald-600 font-bold truncate leading-tight">
+              {statusCounts.Terminé} {language === 'EN' ? 'done' : 'terminé(s)'} •{' '}
+              {statusCounts['En cours']} {language === 'EN' ? 'in progress' : 'en cours'}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 p-2 sm:p-4 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 border-l-3 sm:border-l-4 border-l-emerald-500 shadow-xs">
+            <div className="flex items-center justify-between text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight">
+              <span className="truncate">
+                {language === 'EN' ? 'Consolidated Budget' : 'Budget Consolidé'}
+              </span>
+              <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-500 shrink-0" />
+            </div>
+            <div className="mt-0.5 sm:mt-2 text-[11px] sm:text-xl font-black text-slate-900 dark:text-white truncate leading-tight">
+              {formatCurrency(totalBudgetFCFA, currency, language)}
+            </div>
+            <div className="mt-0.5 sm:mt-1 text-[8px] sm:text-[11px] text-slate-500 truncate leading-tight">
+              Horizon : {activeDossier.horizonPlan}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 p-2 sm:p-4 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 border-l-3 sm:border-l-4 border-l-amber-500 shadow-xs">
+            <div className="flex items-center justify-between text-[8.5px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase leading-tight">
+              <span className="truncate">
+                {language === 'EN' ? 'Completion Rate' : 'Taux d’Achèvement'}
+              </span>
+              <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 text-orange-600 shrink-0" />
+            </div>
+            <div className="mt-0.5 sm:mt-2 text-xs sm:text-2xl font-black text-orange-600 dark:text-orange-400 leading-tight">
+              {completionPct}%
+            </div>
+            <div className="w-full h-1 sm:h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-1 sm:mt-2">
+              <div
+                className="h-full bg-orange-600"
+                style={{ width: `${Math.min(100, completionPct)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* THE 2 EXACT CHARTS FROM ATTACHED SCREENSHOT (2/3 Left + 1/3 Right) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 sm:gap-4">
+          {/* Chart 1 (2/3 width): Répartition opérationnelle par Projet */}
+          <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 p-2.5 sm:p-5 shadow-sm flex flex-col justify-between">
+            <div>
+              <h3 className="text-[11px] sm:text-base font-extrabold text-slate-800 dark:text-white mb-1.5 sm:mb-3 flex items-center gap-1.5 sm:gap-2">
+                <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600 dark:text-[#90D5FF] shrink-0" />
+                <span>
+                  {language === 'EN'
+                    ? 'Operational Breakdown by Project'
+                    : 'Répartition opérationnelle par Projet'}
+                </span>
+              </h3>
+
+              {/* Legend matching the screenshot */}
+              <div className="flex flex-wrap items-center justify-center gap-x-2.5 sm:gap-x-4 gap-y-1 text-[8.5px] sm:text-[11px] font-medium mb-2 sm:mb-4">
+                <span className="inline-flex items-center gap-1 text-[#ef4444]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#ef4444] inline-block" />
+                  {language === 'EN' ? 'Blocked (Bottlenecks)' : 'Bloquées (Goulots)'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#8b5cf6]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#8b5cf6] inline-block" />
+                  {language === 'EN' ? 'Delayed' : 'En Retard'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#0ea5e9]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#0ea5e9] inline-block" />
+                  {language === 'EN' ? 'In Progress' : 'En cours'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#10b981]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#10b981] inline-block" />
+                  {language === 'EN' ? 'Completed' : 'Terminées'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#64748b]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#64748b] inline-block" />
+                  {language === 'EN' ? 'Total Tasks' : 'Total Tâches'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#94a3b8]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#94a3b8] inline-block" />
+                  {language === 'EN' ? 'To Do' : 'À faire'}
+                </span>
+              </div>
+            </div>
+
+            {projectChartData.length === 0 ? (
+              <p className="text-xs text-slate-400 italic py-8 sm:py-12 text-center">
+                {language === 'EN'
+                  ? 'No project for this filter.'
+                  : 'Aucun projet pour ce filtre.'}
+              </p>
+            ) : (
+              <div className="relative pt-1 sm:pt-2 pb-1">
+                {/* Chart Plot Area */}
+                <div className="flex items-end h-36 sm:h-56">
+                  {/* Y-axis labels */}
+                  <div className="flex flex-col justify-between h-28 sm:h-48 pr-1.5 sm:pr-2 text-[8.5px] sm:text-[11px] font-mono text-slate-400 select-none">
+                    {[...yTicks].reverse().map((tick, idx) => (
+                      <span key={idx} className="leading-none">
+                        {tick}
+                      </span>
                     ))}
+                  </div>
+
+                  {/* Bars + Horizontal Gridlines */}
+                  <div className="relative flex-1 h-28 sm:h-48 border-l border-b border-slate-300 dark:border-slate-700 flex items-end justify-around px-1.5 sm:px-6">
+                    {/* Horizontal dashed gridlines */}
+                    <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+                      {yTicks.map((_, idx) => (
+                        <div
+                          key={idx}
+                          className="w-full border-t border-dashed border-slate-200 dark:border-slate-800"
+                        />
+                      ))}
+                    </div>
+
+                    {/* Grouped Bars per Project */}
+                    {projectChartData.map(proj => {
+                      const scalePct = (val: number) =>
+                        yAxisMax > 0
+                          ? Math.min(100, (val / yAxisMax) * 100)
+                          : 0;
+
+                      const donePct = scalePct(proj.done);
+                      const inProgPct = scalePct(proj.inProgress);
+                      const todoPct = scalePct(proj.todo);
+                      const blockedPct = scalePct(proj.blocked);
+                      const totalPct = scalePct(proj.total);
+                      const latePct = scalePct(proj.late);
+
+                      return (
+                        <div
+                          key={proj.id}
+                          className="relative z-10 flex flex-col items-center h-full justify-end group max-w-[140px] flex-1"
+                        >
+                          <div className="flex items-end justify-center gap-1 sm:gap-2 w-full h-full px-0.5 sm:px-1">
+                            {/* Bar 1: Stacked Status Breakdown (Terminées + En cours + À faire + Bloquées) */}
+                            <div
+                              className="w-3.5 sm:w-7 h-full flex flex-col-reverse justify-start rounded-t overflow-hidden"
+                              title={`${proj.name} — Terminées: ${proj.done}, En cours: ${proj.inProgress}, À faire: ${proj.todo}, Bloquées: ${proj.blocked}`}
+                            >
+                              {proj.done > 0 && (
+                                <div
+                                  style={{ height: `${donePct}%` }}
+                                  className="w-full bg-[#10b981] transition-all"
+                                />
+                              )}
+                              {proj.inProgress > 0 && (
+                                <div
+                                  style={{ height: `${inProgPct}%` }}
+                                  className="w-full bg-[#0ea5e9] transition-all"
+                                />
+                              )}
+                              {proj.todo > 0 && (
+                                <div
+                                  style={{ height: `${todoPct}%` }}
+                                  className="w-full bg-[#94a3b8] transition-all"
+                                />
+                              )}
+                              {proj.blocked > 0 && (
+                                <div
+                                  style={{ height: `${blockedPct}%` }}
+                                  className="w-full bg-[#ef4444] transition-all"
+                                />
+                              )}
+                            </div>
+
+                            {/* Bar 2: Total Tâches */}
+                            <div className="w-3.5 sm:w-7 h-full flex items-end">
+                              <div
+                                style={{ height: `${totalPct}%` }}
+                                className="w-full bg-[#64748b] rounded-t transition-all"
+                                title={`${proj.name} — Total Tâches: ${proj.total}`}
+                              />
+                            </div>
+
+                            {/* Bar 3: En Retard */}
+                            <div className="w-3.5 sm:w-7 h-full flex items-end">
+                              <div
+                                style={{
+                                  height: `${
+                                    proj.late > 0 ? Math.max(4, latePct) : 0
+                                  }%`
+                                }}
+                                className="w-full bg-[#8b5cf6] rounded-t transition-all"
+                                title={`${proj.name} — En Retard: ${proj.late}`}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                <div className="text-center mt-3 text-[10px] font-black text-slate-400 tracking-widest uppercase">
-                  GRAVITÉ (Impact) →
-                </div>
-              </div>
-            </div>
-
-            {/* Légende */}
-            <div className="mt-6 pt-4 border-t border-slate-100 flex justify-center gap-6 text-[10px] font-bold flex-wrap">
-              <div className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-emerald-500"></span> Acceptable</div>
-              <div className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-green-400"></span> Sous Contrôle</div>
-              <div className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-amber-400"></span> Vigilance</div>
-              <div className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-rose-500"></span> Alerte Critique</div>
-              <div className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded bg-red-700 animate-pulse"></span> Alerte Majeure</div>
-            </div>
-          </div>
-
-          {/* Volet Détail des risques sélectionnés */}
-          <div className="lg:col-span-5 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm h-full max-h-[480px] overflow-y-auto">
-            <h3 className="font-bold text-slate-800 text-sm mb-3">Détail des incidents de la cellule</h3>
-            {selectedCell ? (
-              <div className="space-y-3">
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] font-semibold text-slate-500">
-                  Filtre actif : Probabilité <span className="text-slate-800">{selectedCell.prob}/4</span> & Gravité <span className="text-slate-800">{selectedCell.grav}/4</span>
-                </div>
-
-                {clickedRisks.length > 0 ? (
-                  clickedRisks.map(r => (
-                    <div key={r.id} className="p-3 bg-slate-50/50 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors">
-                      <div className="flex justify-between items-start mb-1.5">
-                        <span className="text-[9px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded">
-                          {r.type === 'tache' ? `Risque` : `Jalon`}
-                        </span>
-                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                          r.riskStatus === 'traité' ? 'bg-green-100 text-green-800' :
-                          r.riskStatus === 'en traitement' ? 'bg-amber-100 text-amber-800' :
-                          r.riskStatus === 'bloqué' ? 'bg-rose-100 text-rose-800' :
-                          'bg-slate-100 text-slate-700'
-                        }`}>
-                          {r.riskStatus || 'nouveau'}
-                        </span>
-                      </div>
-                      <h4 className="font-bold text-slate-800 text-xs mb-1">{r.name}</h4>
-                      <p className="text-[10px] text-slate-500 italic mb-2">Activité support: {r.activity || '—'}</p>
-                      
-                      <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 border-t border-slate-100 pt-2 font-medium">
-                        <div>Resp : <span className="font-bold text-slate-700">{r.assignee || '—'}</span></div>
-                        <div className="text-right">Axe : <span className="font-bold text-slate-700">{r.axeId ? 'Axe Actif' : 'Axe 1'}</span></div>
-                      </div>
+                {/* X-axis Project Labels */}
+                <div className="flex pl-4 sm:pl-6 pt-1 sm:pt-2 justify-around gap-1 sm:gap-2">
+                  {projectChartData.map(proj => (
+                    <div
+                      key={proj.id}
+                      className="text-center text-[8.5px] sm:text-[11px] font-medium text-slate-600 dark:text-slate-300 max-w-[140px] flex-1 leading-tight line-clamp-2"
+                      title={proj.name}
+                    >
+                      {proj.name}
                     </div>
-                  ))
-                ) : (
-                  <p className="text-slate-400 italic text-xs py-8 text-center">Aucun risque dans cette cellule pour les filtres choisis.</p>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-16 text-slate-400 italic text-xs flex flex-col items-center">
-                <HelpCircle className="w-8 h-8 text-slate-300 mb-2" />
-                Sélectionnez une cellule de la matrice pour examiner les incidents associés.
+                  ))}
+                </div>
               </div>
             )}
           </div>
+
+          {/* Chart 2 (1/3 width): Répartition par Statut (Donut Chart) */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 p-2.5 sm:p-5 shadow-sm flex flex-col justify-between">
+            <h3 className="text-[11px] sm:text-base font-extrabold text-slate-800 dark:text-white mb-1 sm:mb-2 flex items-center gap-1.5 sm:gap-2">
+              <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600 dark:text-[#90D5FF] shrink-0" />
+              <span>
+                {language === 'EN' ? 'Breakdown by Status' : 'Répartition par Statut'}
+              </span>
+            </h3>
+
+            {/* SVG Donut Chart */}
+            <div className="flex flex-col items-center justify-center my-1 sm:my-2">
+              <div className="relative w-28 h-28 sm:w-44 sm:h-44 flex items-center justify-center">
+                <svg
+                  className="w-28 h-28 sm:w-44 sm:h-44 -rotate-90"
+                  viewBox="0 0 160 160"
+                >
+                  {totalActiveOps === 0 ? (
+                    <circle
+                      cx="80"
+                      cy="80"
+                      r={donutRadius}
+                      fill="transparent"
+                      stroke="#e2e8f0"
+                      strokeWidth="22"
+                    />
+                  ) : (
+                    donutSegments.map(seg => {
+                      if (seg.count <= 0) return null;
+                      const fraction = seg.count / totalActiveOps;
+                      const dashLength = Math.max(
+                        0,
+                        fraction * donutCircumference - 2
+                      );
+                      const dashOffset =
+                        -cumulativeFraction * donutCircumference;
+                      cumulativeFraction += fraction;
+
+                      return (
+                        <circle
+                          key={seg.label}
+                          cx="80"
+                          cy="80"
+                          r={donutRadius}
+                          fill="transparent"
+                          stroke={seg.color}
+                          strokeWidth="22"
+                          strokeDasharray={`${dashLength} ${donutCircumference}`}
+                          strokeDashoffset={dashOffset}
+                        >
+                          <title>{`${seg.label}: ${seg.count}`}</title>
+                        </circle>
+                      );
+                    })
+                  )}
+                </svg>
+              </div>
+
+              {/* Donut Legend */}
+              <div className="flex flex-wrap items-center justify-center gap-x-2.5 sm:gap-x-4 gap-y-1 text-[8.5px] sm:text-xs font-medium mt-2 sm:mt-3">
+                <span className="inline-flex items-center gap-1 text-[#ef4444]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#ef4444] inline-block" />
+                  {language === 'EN' ? 'Blocked' : 'Bloquées'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#0ea5e9]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#0ea5e9] inline-block" />
+                  {language === 'EN' ? 'In Progress' : 'En cours'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#10b981]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#10b981] inline-block" />
+                  {language === 'EN' ? 'Completed' : 'Terminées'}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[#94a3b8]">
+                  <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-xs bg-[#94a3b8] inline-block" />
+                  {language === 'EN' ? 'To Do' : 'À faire'}
+                </span>
+              </div>
+            </div>
+
+            {/* Footer Total */}
+            <div className="pt-2 sm:pt-3 border-t border-slate-100 dark:border-slate-800 text-center text-[9.5px] sm:text-xs text-slate-500 dark:text-slate-400">
+              {language === 'EN'
+                ? 'Total active operations:'
+                : 'Total des opérations actives :'}{' '}
+              <strong className="text-slate-900 dark:text-white font-black">
+                {totalActiveOps}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        {/* BOTTLENECKS & ALERTS SECTION (BELOW THE 2 CHARTS) */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
+          <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
+            {language === 'EN'
+              ? `Bottlenecks & Variance Alerts (${delayedRows.length})`
+              : `Goulots d’étranglement & Alertes d’Écarts (${delayedRows.length})`}
+          </h3>
+          {delayedRows.length === 0 ? (
+            <div className="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              {language === 'EN'
+                ? 'No bottleneck or critical variance detected on active tasks.'
+                : 'Aucun goulot d’étranglement ni écart critique détecté sur les tâches actives.'}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {delayedRows.map(r => (
+                <div
+                  key={r.task.id}
+                  className="p-3 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex items-start justify-between gap-3"
+                >
+                  <div>
+                    <div className="text-xs font-black text-slate-900 dark:text-white">
+                      <span className="font-mono text-[#0c4a6e] dark:text-[#90D5FF] mr-1.5">
+                        [{r.code}]
+                      </span>
+                      {r.task.name}
+                    </div>
+                    <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                      {language === 'EN' ? 'Owner:' : 'Responsable :'}{' '}
+                      <strong>{r.task.assignee}</strong> •{' '}
+                      {language === 'EN' ? 'Planned end:' : 'Fin prévue :'}{' '}
+                      {r.task.endDate}
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black shrink-0">
+                    {r.metrics.effectiveStatus === 'Bloqué'
+                      ? language === 'EN'
+                        ? 'BLOCKED'
+                        : 'BLOQUÉ'
+                      : r.metrics.ecartFinLabel}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );
   };
 
-  const renderProjectManager = () => {
-    const filteredDossiers = data;
+  // ============================================================================
+  // VIEW: RÉSEAU PERT (Zoom out down to 10% = 0.10!)
+  // ============================================================================
+  const renderPertView = () => {
+    const pertSummaries = computeDossierPertSummary(activeDossier, todayISO, language).filter(
+      ps => filterProjectId === 'ALL' || ps.projectId === filterProjectId
+    );
+    const allNodes = pertSummaries.flatMap(p => p.nodes);
+
+    // Group nodes by level for SVG layout
+    const levelsMap = new Map<number, typeof allNodes>();
+    allNodes.forEach(n => {
+      const list = levelsMap.get(n.level) || [];
+      list.push(n);
+      levelsMap.set(n.level, list);
+    });
+    const maxLevel = Math.max(0, ...Array.from(levelsMap.keys()));
+    const maxNodesInLevel = Math.max(
+      1,
+      ...Array.from(levelsMap.values()).map(l => l.length)
+    );
+
+    const colWidth = 250;
+    const rowHeight = 130;
+    const svgWidth = Math.max(820, (maxLevel + 1) * colWidth + 120);
+    const svgHeight = Math.max(420, maxNodesInLevel * rowHeight + 100);
+
+    const nodePositions = new Map<string, { x: number; y: number }>();
+    Array.from(levelsMap.entries()).forEach(([lvl, nodes]) => {
+      nodes.forEach((node, idx) => {
+        const x = 60 + lvl * colWidth;
+        const y = 50 + idx * rowHeight;
+        nodePositions.set(node.id, { x, y });
+      });
+    });
 
     return (
-      <div className="space-y-6 animate-in fade-in duration-500 pb-10">
-        <div className="flex justify-between items-center border-b pb-2 border-sky-200 shrink-0">
-          <h2 className="text-xl font-bold text-gray-800 flex items-center">
-            <Folder className="w-6 h-6 mr-2 text-sky-500" /> 
-            Portefeuilles d'Activités & Dossiers
-          </h2>
-          <button 
-            onClick={() => setIsCreatingDossier(true)}
-            className="bg-sky-600 text-white hover:bg-sky-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4 mr-2" /> Nouveau PSD / Dossier
-          </button>
-        </div>
+      <div className="space-y-4">
+        {renderMacroFilterBar()}
 
-        {isCreatingDossier && (
-          <div className="bg-white border-2 border-teal-500 p-6 rounded-2xl shadow-lg space-y-4 animate-in zoom-in-95 duration-200 font-sans">
-            <h3 className="text-lg font-black text-teal-900 flex items-center">
-              <Plus className="w-5 h-5 mr-2" /> Initialiser un Nouveau Dossier
-            </h3>
-            {validationError && (
-              <div className="bg-red-50 text-red-700 p-3 rounded-lg text-xs font-semibold flex items-center">
-                <AlertTriangle className="w-4 h-4 mr-2 shrink-0"/> {validationError}
+        {/* PERT Controls Bar (Zoom down to 10% = 0.10) */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3 shadow-sm flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+              <Network className="w-4 h-4 text-[#0284c7] dark:text-[#90D5FF]" />
+              {language === 'EN'
+                ? 'PERT Network & Critical Path (CPM)'
+                : 'Réseau PERT & Chemin Critique (CPM)'}
+            </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {language === 'EN'
+                ? 'Zoom out down to 10% to view the entire PERT graph on mobile and desktop'
+                : 'Dézoomez jusqu’à 10% pour visualiser l’intégralité du graphe PERT sur mobile et ordinateur'}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Switch Graph / Table */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+              <button
+                onClick={() => setPertViewMode('graph')}
+                className={`px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                  pertViewMode === 'graph'
+                    ? 'bg-[#0c4a6e] text-white'
+                    : 'text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {language === 'EN' ? 'PERT Graph View' : 'Vue Graphique PERT'}
+              </button>
+              <button
+                onClick={() => setPertViewMode('table')}
+                className={`px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                  pertViewMode === 'table'
+                    ? 'bg-[#0c4a6e] text-white'
+                    : 'text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {language === 'EN'
+                  ? 'Predecessor / Chain Table View'
+                  : 'Vue Tableau Antécéd. / Précéd.'}
+              </button>
+            </div>
+
+            {/* Zoom Controls allowing down to 10% (0.10) */}
+            {pertViewMode === 'graph' && (
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg">
+                <button
+                  onClick={() =>
+                    setPertZoom(z => Math.max(0.1, Number((z - 0.1).toFixed(2))))
+                  }
+                  className="p-1 rounded hover:bg-white dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                  title={
+                    language === 'EN' ? 'Zoom out down to 10%' : "Dézoomer jusqu'à 10%"
+                  }
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 min-w-[44px] text-center">
+                  {Math.round(pertZoom * 100)}%
+                </span>
+                <button
+                  onClick={() =>
+                    setPertZoom(z => Math.min(2.0, Number((z + 0.1).toFixed(2))))
+                  }
+                  className="p-1 rounded hover:bg-white dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                  title={language === 'EN' ? 'Zoom in +' : 'Zoomer +'}
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setPertZoom(0.1)}
+                  className="px-1.5 py-0.5 rounded bg-sky-100 dark:bg-slate-700 text-[#0c4a6e] dark:text-[#90D5FF] text-[9px] font-black cursor-pointer"
+                  title={language === 'EN' ? 'Zoom out to 10%' : 'Dézoomer à 10%'}
+                >
+                  10%
+                </button>
+                <button
+                  onClick={() => setPertZoom(1)}
+                  className="p-1 rounded hover:bg-white dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer"
+                  title={language === 'EN' ? 'Reset to 100%' : 'Réinitialiser à 100%'}
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-[10px] font-black text-teal-700 uppercase tracking-widest block mb-1">Institution Rattachée</label>
-                <input 
-                  type="text" 
-                  value={newDossierForm.institution} 
-                  onChange={e => setNewDossierForm({ ...newDossierForm, institution: e.target.value })}
-                  placeholder="Ex: MINISTÈRE DE L'AGRICULTURE, ENTREPRISE PRIVÉE, etc."
-                  className="w-full p-2.5 text-sm border border-teal-200 rounded-lg outline-none focus:ring-2 focus:ring-teal-400 font-bold text-teal-950 uppercase"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-teal-700 uppercase tracking-widest block mb-1">Nom du Portefeuille / PSD d'entraînement</label>
-                <input 
-                  type="text" 
-                  value={newDossierForm.name} 
-                  onChange={e => setNewDossierForm({ ...newDossierForm, name: e.target.value })}
-                  placeholder="Ex: Nouveau Portefeuille (À notre échelle)"
-                  className="w-full p-2.5 text-sm border border-teal-200 rounded-lg outline-none focus:ring-2 focus:ring-teal-400"
-                />
-              </div>
-            </div>
+          </div>
+        </div>
 
-            <div>
-              <label className="text-[10px] font-black text-teal-700 uppercase tracking-widest block mb-1">Description libre du Portefeuille</label>
-              <textarea 
-                rows={2}
-                value={newDossierForm.description} 
-                onChange={e => setNewDossierForm({ ...newDossierForm, description: e.target.value })}
-                placeholder="Espace d'expérimentation libre pour simuler et créer un portefeuille..."
-                className="w-full p-2.5 text-sm border border-teal-200 rounded-lg outline-none focus:ring-2 focus:ring-teal-400 text-slate-600 font-medium"
-              />
+        {/* Dynamic PERT Interpretation Cards */}
+        <div className="space-y-3">
+          {pertSummaries.map(ps => (
+            <div
+              key={ps.projectId}
+              className="bg-sky-50/80 dark:bg-slate-900 rounded-xl border border-[#90D5FF] dark:border-sky-800 p-4 space-y-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-[#0c4a6e] dark:text-[#90D5FF]">
+                  {ps.projectName} —{' '}
+                  {language === 'EN' ? 'Total Duration:' : 'Durée Totale :'}{' '}
+                  {ps.projectDuration}j
+                </span>
+                <span className="px-2.5 py-0.5 rounded bg-[#0c4a6e] text-white text-[10px] font-black">
+                  {language === 'EN' ? 'Critical Path:' : 'Chemin Critique :'}{' '}
+                  {ps.criticalPathCodes.join(' → ') || 'N/A'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-700 dark:text-slate-300">
+                {ps.interpretation.criticalPathSummary}
+              </p>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                {ps.interpretation.slackSummary}
+              </p>
+              <p className="text-xs font-bold text-slate-900 dark:text-white">
+                {ps.interpretation.riskAndSteeringSummary}
+              </p>
             </div>
+          ))}
+        </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-[10px] font-black text-teal-700 uppercase tracking-widest block mb-1">Type de Document</label>
-                <select
-                  value={newDossierForm.type}
-                  onChange={e => {
-                    const type = e.target.value;
-                    const horizonYears = type === 'PSD' ? 10 : 3;
-                    setNewDossierForm({ ...newDossierForm, type, horizonYears });
-                  }}
-                  className="w-full p-2.5 text-sm border border-teal-200 rounded-lg outline-none bg-white font-semibold text-teal-900"
-                >
-                  <option value="PSD">Plan Stratégique (PSD)</option>
-                  <option value="Dossier Opérationnel">Dossier Opérationnel</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-teal-700 uppercase tracking-widest block mb-1">Année de Début</label>
-                <input 
-                  type="number" 
-                  value={newDossierForm.startYear} 
-                  onChange={e => setNewDossierForm({ ...newDossierForm, startYear: parseInt(e.target.value) || 2026 })}
-                  className="w-full p-2.5 text-sm border border-teal-200 rounded-lg outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-teal-700 uppercase tracking-widest block mb-1">Durée d'Horizon (Années)</label>
-                <input 
-                  type="number" 
-                  min="1"
-                  max="100"
-                  value={newDossierForm.horizonYears} 
-                  onChange={e => setNewDossierForm({ ...newDossierForm, horizonYears: Math.max(1, parseInt(e.target.value) || 1) })}
-                  className="w-full p-2.5 text-sm border border-teal-200 rounded-lg outline-none font-bold text-teal-900"
-                />
-              </div>
-            </div>
+        {pertViewMode === 'graph' ? (
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm overflow-auto max-h-[70vh]">
+            <div
+              style={{
+                transform: `scale(${pertZoom})`,
+                transformOrigin: 'top left',
+                width: svgWidth * pertZoom,
+                height: svgHeight * pertZoom
+              }}
+            >
+              <svg width={svgWidth} height={svgHeight} className="overflow-visible">
+                <defs>
+                  <marker
+                    id="arrow-normal"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="6"
+                    refY="4"
+                    orient="auto"
+                  >
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#0284c7" />
+                  </marker>
+                  <marker
+                    id="arrow-crit"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="6"
+                    refY="4"
+                    orient="auto"
+                  >
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#f59e0b" />
+                  </marker>
+                </defs>
 
-            <div className="flex justify-end space-x-3 pt-3 border-t">
-              <button 
-                onClick={() => setIsCreatingDossier(false)} 
-                className="px-4 py-2 rounded-lg text-xs font-bold bg-gray-100 hover:bg-gray-200 text-gray-700 transition cursor-pointer"
-              >
-                Annuler
-              </button>
-              <button 
-                onClick={handleSaveNewDossier} 
-                className="px-4 py-2 rounded-lg text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow transition cursor-pointer"
-              >
-                Créer l'Espace de suivi
-              </button>
+                {/* Dependency Edges */}
+                {allNodes.map(node => {
+                  if (!node.antecedentId || node.antecedentId === '—') return null;
+                  const from = nodePositions.get(node.antecedentId);
+                  const to = nodePositions.get(node.id);
+                  if (!from || !to) return null;
+                  const predNode = allNodes.find(n => n.id === node.antecedentId);
+                  const isCritEdge = node.isCritical && predNode?.isCritical;
+
+                  const x1 = from.x + 175;
+                  const y1 = from.y + 42;
+                  const x2 = to.x;
+                  const y2 = to.y + 42;
+                  const midX = (x1 + x2) / 2;
+
+                  return (
+                    <path
+                      key={`${node.antecedentId}->${node.id}`}
+                      d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
+                      fill="none"
+                      stroke={isCritEdge ? '#f59e0b' : '#0284c7'}
+                      strokeWidth={isCritEdge ? 3 : 1.8}
+                      strokeDasharray={isCritEdge ? undefined : '4 2'}
+                      markerEnd={
+                        isCritEdge ? 'url(#arrow-crit)' : 'url(#arrow-normal)'
+                      }
+                    />
+                  );
+                })}
+
+                {/* PERT Nodes */}
+                {allNodes.map(node => {
+                  const pos = nodePositions.get(node.id);
+                  if (!pos) return null;
+                  return (
+                    <g
+                      key={node.id}
+                      transform={`translate(${pos.x}, ${pos.y})`}
+                    >
+                      <rect
+                        width={175}
+                        height={86}
+                        rx={10}
+                        fill={node.isCritical ? '#fffbeb' : '#f0f9ff'}
+                        stroke={node.isCritical ? '#f59e0b' : '#0284c7'}
+                        strokeWidth={node.isCritical ? 2.5 : 1.5}
+                      />
+                      <text
+                        x={10}
+                        y={18}
+                        fontSize={11}
+                        fontWeight="900"
+                        fill="#0c4a6e"
+                      >
+                        {node.code} ({node.duration}j)
+                      </text>
+                      {node.isCritical && (
+                        <text
+                          x={114}
+                          y={18}
+                          fontSize={9}
+                          fontWeight="900"
+                          fill="#d97706"
+                        >
+                          {language === 'EN' ? 'CRITICAL' : 'CRITIQUE'}
+                        </text>
+                      )}
+                      <text x={10} y={34} fontSize={9.5} fill="#334155">
+                        {node.name.length > 24
+                          ? `${node.name.slice(0, 24)}…`
+                          : node.name}
+                      </text>
+                      <line
+                        x1={8}
+                        y1={42}
+                        x2={167}
+                        y2={42}
+                        stroke="#cbd5e1"
+                        strokeWidth={1}
+                      />
+                      <text x={10} y={56} fontSize={9} fill="#0f172a">
+                        ES: J+{node.es} | EF: J+{node.ef}
+                      </text>
+                      <text x={10} y={70} fontSize={9} fill="#0f172a">
+                        LS: J+{node.ls} | LF: J+{node.lf}
+                      </text>
+                      <text
+                        x={114}
+                        y={78}
+                        fontSize={8.5}
+                        fontWeight="bold"
+                        fill={node.totalFloat === 0 ? '#d97706' : '#0284c7'}
+                      >
+                        MT: {node.totalFloat}j
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
             </div>
           </div>
+        ) : (
+          /* PERT Table: Code | Activité / Jalon | Antécéd. | Précéd. */
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto">
+            <table className="w-full border-collapse table-compact">
+              <thead>
+                <tr className="bg-[#0c4a6e] text-white">
+                  <th className="text-left">Code</th>
+                  <th className="text-left">
+                    {language === 'EN' ? 'Activity / Milestone' : 'Activité / Jalon'}
+                  </th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'Predec.' : 'Antécéd.'}
+                  </th>
+                  <th className="text-left">
+                    {language === 'EN'
+                      ? 'Preceding (Full Chain)'
+                      : 'Précéd. (Chaîne Complète)'}
+                  </th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'Duration' : 'Durée'}
+                  </th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'ES (Early)' : 'ES (Tôt)'}
+                  </th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'EF (Early)' : 'EF (Tôt)'}
+                  </th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'LS (Late)' : 'LS (Tard)'}
+                  </th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'LF (Late)' : 'LF (Tard)'}
+                  </th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'Total Float' : 'Marge Totale'}
+                  </th>
+                  <th className="text-center">
+                    {language === 'EN' ? 'Critical Path' : 'Chemin Critique'}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                {allNodes.map(node => (
+                  <tr
+                    key={node.id}
+                    className={
+                      node.isCritical
+                        ? 'bg-amber-50/60 dark:bg-amber-950/30 font-bold'
+                        : 'bg-white dark:bg-slate-900'
+                    }
+                  >
+                    <td className="font-mono text-[#0c4a6e] dark:text-[#90D5FF] font-black">
+                      {node.code}
+                    </td>
+                    <td className="text-slate-900 dark:text-white whitespace-normal break-words">
+                      <div>{node.name}</div>
+                      {node.libelleRisque && (
+                        <div className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 mt-0.5">
+                          {language === 'EN' ? 'Risk:' : 'Risque :'} {node.libelleRisque}
+                        </div>
+                      )}
+                    </td>
+                    <td className="text-center font-mono text-slate-700 dark:text-slate-300">
+                      {node.antecedentCode}
+                    </td>
+                    <td className="font-mono text-slate-600 dark:text-slate-400">
+                      {node.precedingChainCodes}
+                    </td>
+                    <td className="text-center font-mono">{node.duration}j</td>
+                    <td className="text-center font-mono">J+{node.es}</td>
+                    <td className="text-center font-mono">J+{node.ef}</td>
+                    <td className="text-center font-mono">J+{node.ls}</td>
+                    <td className="text-center font-mono">J+{node.lf}</td>
+                    <td className="text-center font-mono">{node.totalFloat}j</td>
+                    <td className="text-center">
+                      {node.isCritical ? (
+                        <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[9px] font-black">
+                          {language === 'EN' ? 'CRITICAL' : 'CRITIQUE'}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-emerald-600 font-bold">
+                          {language === 'EN' ? 'Flexible' : 'Souple'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-        
-        {/* Grille de cartes de portefeuilles */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredDossiers.map(dossier => {
+      </div>
+    );
+  };
+
+  // ============================================================================
+  // VIEW: TABLEAU KANBAN INTERACTIF (Execution-driven + Date Recalculation)
+  // ============================================================================
+  const renderKanbanView = () => {
+    const columns: Array<{
+      status: Task['status'];
+      title: string;
+      headerBg: string;
+    }> = [
+      {
+        status: 'À faire',
+        title: language === 'EN' ? 'To Do' : 'À Faire',
+        headerBg: 'bg-slate-700 text-white'
+      },
+      {
+        status: 'En cours',
+        title: language === 'EN' ? 'In Execution' : 'En Cours d’Exécution',
+        headerBg: 'bg-[#0284c7] text-white'
+      },
+      {
+        status: 'Bloqué',
+        title: language === 'EN' ? 'Blocked / Delayed' : 'Bloqué / Retard',
+        headerBg: 'bg-amber-500 text-slate-950'
+      },
+      {
+        status: 'Terminé',
+        title: language === 'EN' ? 'Completed' : 'Terminé',
+        headerBg: 'bg-emerald-600 text-white'
+      }
+    ];
+
+    return (
+      <div className="space-y-2.5 sm:space-y-4">
+        {renderMacroFilterBar()}
+
+        <div className="bg-white dark:bg-slate-900 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 p-2 sm:p-3 shadow-sm">
+          <h2 className="text-xs sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-1.5 sm:gap-2">
+            <Kanban className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0" />
+            <span>
+              {language === 'EN'
+                ? 'Interactive Kanban Board (Driven by Real Execution)'
+                : 'Tableau Kanban Interactif (Basé sur l’Exécution Réelle)'}
+            </span>
+          </h2>
+          <p className="text-[9.5px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+            {language === 'EN'
+              ? 'Move a task or milestone from one status column to another: its planned dates automatically recalculate while preserving its duration and predecessor logic.'
+              : 'Déplacez une tâche ou un jalon d’une colonne de statut vers une autre : ses dates prévues se recalculent automatiquement en conservant sa durée et la logique des antécédents.'}
+          </p>
+        </div>
+
+        {/* HORIZONTAL KANBAN COLUMNS (Side-by-side horizontally on mobile & desktop!) */}
+        <div className="flex flex-row overflow-x-auto lg:grid lg:grid-cols-4 gap-2 sm:gap-3 pb-2">
+          {columns.map(col => {
+            const colRows = flatTaskRows.filter(
+              r => r.metrics.effectiveStatus === col.status
+            );
+
             return (
-              <div 
-                key={dossier.id} 
-                className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between overflow-hidden relative transition-all duration-300 hover:shadow-md border-l-[6px] border-l-emerald-500"
+              <div
+                key={col.status}
+                className="min-w-[205px] w-[205px] sm:min-w-[245px] sm:w-[245px] lg:min-w-0 lg:w-auto shrink-0 bg-slate-100/80 dark:bg-slate-900/70 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden"
               >
-                <div className="p-6 flex flex-col h-full font-sans">
-                  <div className="flex justify-between items-start w-full">
-                    <div className="p-2.5 rounded-2xl bg-teal-50 text-teal-600">
-                      <BriefcaseIcon className="w-6 h-6" />
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider bg-teal-100 text-teal-800">
-                        Éditable
-                      </span>
-                      <button 
-                        onClick={() => setDeleteConfirmation({ id: dossier.id, step: 1 })}
-                        className="text-slate-300 hover:text-red-500 transition-colors cursor-pointer"
-                        title="Supprimer la simulation"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {deleteConfirmation.id === dossier.id && (
-                    <div className="mt-3 flex items-center space-x-2 bg-red-50 p-2 rounded-lg border border-red-200 shadow-sm transition-all duration-300">
-                      {deleteConfirmation.step === 1 && (
-                        <>
-                          <span className="text-xs font-bold text-red-600 px-1">Sûr ?</span>
-                          <button onClick={() => setDeleteConfirmation({ id: dossier.id, step: 2 })} className="bg-red-500 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-red-600 transition-colors cursor-pointer">Oui</button>
-                          <button onClick={() => setDeleteConfirmation({ id: null, step: 0 })} className="bg-gray-300 text-gray-700 px-2 py-1 rounded text-[10px] font-bold hover:bg-gray-400 transition-colors cursor-pointer">Non</button>
-                        </>
-                      )}
-                      {deleteConfirmation.step === 2 && (
-                        <>
-                          <span className="text-[10px] font-black text-red-600 px-1 uppercase tracking-wider animate-pulse">Irréversible !</span>
-                          <button onClick={() => { handleDeleteDossier(dossier.id); setDeleteConfirmation({ id: null, step: 0 }); }} className="bg-red-700 text-white px-3 py-1 rounded text-[10px] font-bold hover:bg-red-800 shadow-md transition-colors cursor-pointer">Détruire</button>
-                          <button onClick={() => setDeleteConfirmation({ id: null, step: 0 })} className="bg-gray-300 text-gray-700 px-2 py-1 rounded text-[10px] font-bold hover:bg-gray-400 transition-colors cursor-pointer">Annuler</button>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="border-b border-dashed border-teal-200/80 pb-2 mt-4">
-                    <p className="text-[10.5px] font-black tracking-widest text-slate-400 uppercase truncate" title={dossier.institution || 'INSTITUTION PAR DÉFAUT'}>
-                      {dossier.institution || 'INSTITUTION PAR DÉFAUT'}
-                    </p>
-                  </div>
-
-                  <div className="py-3 flex-1 flex flex-col">
-                    <h3 className="text-base font-black text-slate-800 leading-snug line-clamp-2" title={dossier.name}>
-                      {dossier.name}
-                    </h3>
-                    <p className="text-[11.5px] text-slate-500 font-medium mt-2 leading-relaxed line-clamp-3">
-                      {dossier.description || 'Espace d\'expérimentation pour la saisie et le suivi des risques opérationnels.'}
-                    </p>
-                  </div>
-
-                  <div className="border-t border-dashed border-teal-200/80 pt-4 mt-2">
-                    <div className="flex justify-between items-center text-[11px] text-slate-400 font-bold mb-4">
-                      <span className="bg-teal-50 text-teal-800 px-2 py-1 rounded border border-teal-200">Horizon: {dossier.horizonPlan}</span>
-                      <span>{dossier.axes?.length || 0} Axes</span>
-                    </div>
-
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 mb-3 space-y-2">
-                      <div>
-                        <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">Modifier l'institution :</label>
-                        <input 
-                          type="text" 
-                          value={dossier.institution || ''} 
-                          onChange={e => handleUpdateDossier(dossier.id, 'institution', e.target.value)}
-                          className="w-full mt-1 p-1.5 text-xs font-bold border border-slate-200 rounded uppercase bg-white outline-none focus:border-teal-400" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">Modifier le titre :</label>
-                        <input 
-                          type="text" 
-                          value={dossier.name || ''} 
-                          onChange={e => handleUpdateDossier(dossier.id, 'name', e.target.value)}
-                          className="w-full mt-1 p-1.5 text-xs font-bold border border-slate-200 rounded bg-white outline-none focus:border-teal-400" 
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">Année Début :</label>
-                          <input 
-                            type="number" 
-                            value={dossier.psdYear === undefined || dossier.psdYear === null ? '' : dossier.psdYear} 
-                            onChange={e => handleUpdateDossier(dossier.id, 'psdYear', e.target.value)}
-                            className="w-full mt-1 p-1.5 text-xs font-bold border border-slate-200 rounded bg-white outline-none focus:border-teal-400" 
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">Échéance (ans) :</label>
-                          <input 
-                            type="number" 
-                            min="1"
-                            value={dossier.horizonYears === undefined || dossier.horizonYears === null ? '' : dossier.horizonYears} 
-                            onChange={e => handleUpdateDossier(dossier.id, 'horizonYears', e.target.value)}
-                            className="w-full mt-1 p-1.5 text-xs font-bold border border-slate-200 rounded bg-white outline-none focus:border-teal-400" 
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">Modifier la description :</label>
-                        <textarea 
-                          value={dossier.description || ''} 
-                          onChange={e => handleUpdateDossier(dossier.id, 'description', e.target.value)}
-                          className="w-full mt-1 p-1.5 text-xs font-medium border border-slate-200 rounded bg-white outline-none focus:border-teal-400" 
-                        />
-                      </div>
-                    </div>
-
-                    <button 
-                      onClick={() => {
-                        setActiveDossierId(dossier.id);
-                        setIsExploring(true);
-                        setActiveTab('dashboard');
-                      }}
-                      className="w-full bg-sky-600 hover:bg-sky-700 text-white py-2.5 rounded-xl font-bold flex items-center justify-center space-x-2 shadow-sm transition-colors text-sm cursor-pointer"
-                    >
-                      <Unlock className="w-4 h-4" />
-                      <span>Ouvrir Suivi des risques</span>
-                    </button>
-                  </div>
+                <div
+                  className={`px-2.5 py-2 sm:px-3 sm:py-2.5 ${col.headerBg} flex items-center justify-between font-black text-[10px] sm:text-xs uppercase`}
+                >
+                  <span className="truncate">{col.title}</span>
+                  <span className="px-1.5 sm:px-2 py-0.5 rounded-full bg-black/20 text-[9px] sm:text-[10px] shrink-0">
+                    {colRows.length}
+                  </span>
                 </div>
 
-                <div className="bg-teal-50/50 p-4 border-t border-slate-100 space-y-3 font-sans">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-black text-teal-800 uppercase tracking-wider">Axes Stratégiques</span>
-                    <button 
-                      onClick={() => handleAddAxe(dossier.id)}
-                      className="bg-teal-600 hover:bg-teal-700 text-white text-[9px] px-2 py-1 rounded font-bold flex items-center cursor-pointer"
-                    >
-                      <Plus className="w-3 h-3 mr-1" /> Ajouter Axe
-                    </button>
-                  </div>
+                <div className="p-2 sm:p-2.5 space-y-2 sm:space-y-2.5 flex-1 max-h-[65vh] overflow-y-auto">
+                  {colRows.map(r => {
+                    const { task, code, projectId, metrics } = r;
+                    const isJalon = task.type === 'jalon';
 
-                  <div className="space-y-2.5 max-h-40 overflow-y-auto pr-1">
-                    {dossier.axes?.map((axe, axeIdx) => (
-                      <div key={axe.id} className="bg-white p-2 rounded-lg border border-slate-200 relative shadow-xs">
-                        <button 
-                          onClick={() => handleDeleteAxe(dossier.id, axe.id)}
-                          className="absolute top-2 right-2 text-slate-300 hover:text-red-500 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                        <div className="flex items-center space-x-1.5 pr-6">
-                          <span className="bg-teal-100 text-teal-800 font-black text-[9px] w-4 h-4 rounded flex items-center justify-center shrink-0">{axeIdx + 1}</span>
-                          <input 
-                            type="text" 
-                            value={axe.name} 
-                            onChange={e => handleUpdateAxe(dossier.id, axe.id, 'name', e.target.value)}
-                            placeholder="Nom de l'axe..." 
-                            className="w-full p-1 text-[11px] font-bold border border-slate-100 rounded focus:border-teal-400 outline-none" 
-                          />
+                    return (
+                      <div
+                        key={task.id}
+                        className={`rounded-lg border p-2 sm:p-3 shadow-xs space-y-1.5 sm:space-y-2 ${
+                          isJalon
+                            ? 'bg-sky-50/80 dark:bg-slate-800/70 border-[#90D5FF]'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1.5 sm:gap-2">
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-mono text-[9px] sm:text-[10px] font-black shrink-0 ${
+                              isJalon
+                                ? 'bg-[#90D5FF] text-slate-950'
+                                : 'bg-[#0c4a6e] text-white'
+                            }`}
+                          >
+                            {code}
+                          </span>
+                          <span className="text-[8.5px] sm:text-[10px] font-black text-[#0284c7] dark:text-[#90D5FF] text-right leading-tight">
+                            {task.phase} • {metrics.plannedDurationLabel}
+                          </span>
                         </div>
-                        <div className="flex justify-between items-center mt-2 pt-1 border-t border-slate-100">
-                          <button onClick={() => handleAddProject(dossier.id, axe.id)} className="text-[8px] bg-slate-100 hover:bg-teal-100 text-slate-700 hover:text-teal-800 px-1.5 py-0.5 rounded font-black flex items-center transition-colors cursor-pointer">
-                            <Plus className="w-2.5 h-2.5 mr-0.5" /> Ajouter un Projet
-                          </button>
-                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{axe.projects?.length || 0} projets</span>
+
+                        <div className="text-[10.5px] sm:text-xs font-extrabold text-slate-900 dark:text-white leading-snug">
+                          {isJalon ? `◆ ${task.name}` : task.name}
                         </div>
-                        {axe.projects?.length > 0 && (
-                          <div className="mt-1.5 space-y-1 pl-4">
-                            {axe.projects.map((proj, projIdx) => (
-                              <div key={proj.id} className="flex items-center gap-1">
-                                <span className="text-[9px] text-slate-400 font-bold">{projIdx + 1}.</span>
-                                <input 
-                                  type="text" 
-                                  value={proj.name} 
-                                  onChange={e => handleUpdateProject(dossier.id, axe.id, proj.id, 'name', e.target.value)} 
-                                  className="w-full p-1 text-[9px] font-semibold border-b border-transparent focus:border-teal-200 outline-none" 
-                                  placeholder="Nom du projet..."
-                                />
-                                <button onClick={() => handleDeleteProject(dossier.id, axe.id, proj.id)} className="text-slate-300 hover:text-red-500 cursor-pointer"><X className="w-3 h-3" /></button>
-                              </div>
-                            ))}
+                        {task.libelleRisque && (
+                          <div className="text-[9.5px] font-semibold text-orange-700 dark:text-orange-300 leading-snug">
+                            {language === 'EN' ? 'Risk:' : 'Risque :'} {task.libelleRisque}
                           </div>
                         )}
+
+                        <div className="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 space-y-0.5">
+                          <div className="truncate">
+                            {language === 'EN' ? 'Assignee:' : 'Réalisateur :'}{' '}
+                            {task.assignee}
+                          </div>
+                          <div>
+                            {language === 'EN' ? 'Planned:' : 'Prévu:'}{' '}
+                            {task.startDate} → {task.endDate}
+                          </div>
+                        </div>
+
+                        <div className="pt-1.5 sm:pt-2 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-1">
+                          {columns
+                            .filter(c => c.status !== col.status)
+                            .map(targetCol => (
+                              <button
+                                key={targetCol.status}
+                                onClick={() =>
+                                  handleMoveTaskInKanban(
+                                    projectId,
+                                    task.id,
+                                    targetCol.status
+                                  )
+                                }
+                                className="px-1.5 sm:px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 hover:bg-[#90D5FF] hover:text-slate-950 text-[8.5px] sm:text-[9px] font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                              >
+                                → {targetCol.title}
+                              </button>
+                            ))}
+                        </div>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -2104,1191 +3655,756 @@ function MainApp() {
     );
   };
 
-  const renderProcessus = () => {
-    let filteredProjects = allProjects;
-    if (filterProcessusAxe !== 'FULL') filteredProjects = filteredProjects.filter(p => p.axeId === filterProcessusAxe);
-    if (filterProcessusProj !== 'FULL') filteredProjects = filteredProjects.filter(p => p.id === filterProcessusProj);
-    
-    const colSpanCount = 22; 
-
-    const enrichedProjects = filteredProjects.map(project => {
-      const phaseGroups = STANDARD_PHASES.map(phaseName => {
-        const pTasks = Array.isArray(project.tasks) ? project.tasks.filter(t => t.phase === phaseName) : [];
-        let minStart = Infinity;
-        pTasks.forEach(t => {
-            const d = new Date(t.dateIdentification || t.startDate).getTime();
-            if (!isNaN(d) && d < minStart) minStart = d;
-        });
-        return { phase: phaseName, tasks: pTasks, minStart };
-      });
-
-      phaseGroups.sort((a, b) => {
-        if (a.minStart === Infinity && b.minStart === Infinity) return STANDARD_PHASES.indexOf(a.phase) - STANDARD_PHASES.indexOf(b.phase);
-        if (a.minStart === Infinity) return 1;
-        if (b.minStart === Infinity) return -1;
-        return a.minStart - b.minStart;
-      });
-
-      phaseGroups.forEach(group => {
-        group.tasks.sort((a, b) => {
-          const dA = new Date(a.dateIdentification || a.startDate).getTime();
-          const dB = new Date(b.dateIdentification || b.startDate).getTime();
-          if (isNaN(dA) && isNaN(dB)) return 0;
-          if (isNaN(dA)) return 1;
-          if (isNaN(dB)) return -1;
-          return dA - dB;
-        });
-      });
-
-      const groups = phaseGroups.map((group, phaseIndex) => {
-        const items = group.tasks.map((t, idx) => {
-          return { 
-            ...t, 
-            number: `${phaseIndex + 1}.${idx + 1}`
-          };
-        });
-        return { phase: group.phase, items };
-      });
-      return { ...project, groups };
-    });
-
-    return (
-      <div className="animate-in fade-in duration-500 pb-10 flex flex-col h-full relative font-sans">
-        <div className="flex justify-between items-center border-b pb-1 border-sky-200 shrink-0 mb-4">
-          <h2 className="text-lg font-bold text-gray-800 flex items-center"><Activity className="w-5 h-5 mr-2 text-sky-500" /> Suivi des Risques (Saisie Opérationnelle)</h2>
-        </div>
-
-        {validationError && (
-          <div className="bg-red-50 text-red-700 p-3 rounded-lg border border-red-200 mb-4 flex items-center text-sm font-semibold animate-bounce">
-            <AlertTriangle className="w-4 h-4 mr-2 shrink-0" />
-            {validationError}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-4 shrink-0">
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1" /> 1. Filtrer par Axe Stratégique
-            </label>
-            <div className="relative">
-              <select 
-                className="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-800 text-sm font-medium rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-                value={filterProcessusAxe}
-                onChange={(e) => { 
-                  setFilterProcessusAxe(e.target.value); 
-                  setFilterProcessusProj('FULL');
-                }}
-              >
-                <option value="FULL">Toutes les données (Vue Globale)</option>
-                {activeDossier?.axes?.map(axe => (
-                  <option key={axe.id} value={axe.id}>{axe.name}</option>
-                ))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-gray-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1" /> 2. Filtrer par Projet OP
-            </label>
-            <div className="relative">
-              <select 
-                className="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-800 text-sm font-medium rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-                value={filterProcessusProj}
-                onChange={(e) => setFilterProcessusProj(e.target.value)}
-              >
-                <option value="FULL">Tous les projets {filterProcessusAxe !== 'FULL' ? 'de cet axe' : ''}</option>
-                {allProjects
-                  .filter(p => filterProcessusAxe === 'FULL' || p.axeId === filterProcessusAxe)
-                  .map((proj, idx) => (
-                    <option key={proj.id} value={proj.id}>{idx + 1}. {proj.name}</option>
-                  ))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-gray-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto pr-2 pb-10">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden mb-6">
-            <div className="p-4 border-b border-gray-200 bg-gray-50/50 shrink-0 flex justify-between items-center">
-              <h2 className="text-base font-bold text-gray-800 flex items-center">
-                Matrice d'Identification et de Résolution des Risques
-              </h2>
-            </div>
-            
-            <div className="overflow-x-auto relative max-h-[600px] hide-scrollbar">
-              <table className="w-full text-left text-sm whitespace-nowrap" style={{ minWidth: '2800px' }}>
-                <thead className="bg-slate-800 text-white text-xs shadow-md sticky top-0 z-40">
-                  <tr>
-                    {/* Colonnes en-tête */}
-                    <th rowSpan={2} className="px-3 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-32">Tâche / Jalon</th>
-                    <th rowSpan={2} className="px-3 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-44">Activité</th>
-                    <th rowSpan={2} className="px-3 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-28">Date Début</th>
-                    <th rowSpan={2} className="px-3 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-28">Date Fin</th>
-
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 text-[10px] uppercase font-sans w-24">Type</th>
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-32">Responsable</th>
-                    
-                    {/* Groupe Identification */}
-                    <th colSpan={4} className="px-2 py-1.5 border-b border-slate-700 border-r border-slate-600 text-center bg-sky-950 text-[10px] uppercase font-sans text-sky-200">Identification</th>
-                    
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-32">Nature du Risque</th>
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-24">Probabilité</th>
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-24">Gravité (Impact)</th>
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-24">Criticité</th>
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-28">Conséquence si avéré</th>
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-24">Tendance</th>
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-40">Action Préventive</th>
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 text-center text-[10px] uppercase font-sans w-40">Action Corrective</th>
-                    
-                    {/* Groupe Résolution */}
-                    <th colSpan={3} className="px-2 py-1.5 border-b border-slate-700 border-r border-slate-600 text-center bg-emerald-950 text-[10px] uppercase font-sans text-emerald-200">Résolution</th>
-                    
-                    <th rowSpan={2} className="px-2 py-3 border-b border-slate-700 text-center bg-slate-700 w-20 min-w-[80px] text-[10px] uppercase sticky right-0 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.3)] font-sans">Actions</th>
-                  </tr>
-                  <tr className="bg-slate-700 text-[9px] text-white">
-                    {/* Sous-colonnes d'identification */}
-                    <th className="px-2 py-1.5 border-b border-slate-600 border-r text-center w-56">Intitulé du risque</th>
-                    <th className="px-2 py-1.5 border-b border-slate-600 border-r text-center w-28">Date d'id.</th>
-                    <th className="px-2 py-1.5 border-b border-slate-600 border-r text-center w-32">Déclaré par</th>
-                    <th className="px-2 py-1.5 border-b border-slate-600 border-r text-center w-28">Statut</th>
-                    
-                    {/* Sous-colonnes de résolution */}
-                    <th className="px-2 py-1.5 border-b border-slate-600 border-r text-center w-28">Date de résol.</th>
-                    <th className="px-2 py-1.5 border-b border-slate-600 border-r text-center w-40">Résolution finale</th>
-                    <th className="px-2 py-1.5 border-b border-slate-600 border-r text-center w-40">Commentaire</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-100 font-sans">
-                  {enrichedProjects.map(project => {
-                    return (
-                      <React.Fragment key={project.id}>
-                        <tr className="bg-gray-200 border-b">
-                          <td colSpan={colSpanCount} className="px-3 py-2.5 font-bold text-gray-800 text-sm bg-gray-200 z-20 relative">
-                            <div className="flex justify-between items-center w-full sticky left-4">
-                              <span className="flex items-center">
-                                <Unlock className="w-3.5 h-3.5 mr-2 text-teal-600 animate-pulse" />
-                                Projet : <span className="text-teal-700 ml-1 font-black">{project.name || ''}</span>
-                              </span>
-                            </div>
-                          </td>
-                        </tr>
-                        
-                        {project.groups.map((group, idx) => (
-                          <React.Fragment key={`${project.id}-phase-${idx}`}>
-                            <tr className="bg-slate-700 border-b border-slate-600">
-                              <td colSpan={colSpanCount} className="p-0">
-                                <div className="px-3 py-1.5 w-max text-sky-200 font-bold text-[11px] uppercase tracking-widest flex items-center sticky left-4">
-                                  PHASE DU CYCLE : {group.phase}
-                                  <div className="flex space-x-2">
-                                    <button 
-                                      onClick={() => openInlineAdd(project.dossierId || '', project.axeId || '', project.id, group.phase, 'tache')} 
-                                      className="ml-4 bg-teal-500 hover:bg-teal-400 text-white px-2 py-0.5 rounded text-[9px] flex items-center shadow transition-colors cursor-pointer"
-                                    >
-                                      <Plus className="w-3 h-3 mr-1"/> Ajouter Risque
-                                    </button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                            
-                            {(() => {
-                              const renderInlineEditRow = (itemData: TaskItem) => {
-                                return (
-                                <tr className="bg-sky-50/80 border-b-2 border-sky-300 shadow-inner text-xs">
-                                  {/* 1. Tâche / Jalon */}
-                                  <td className="px-2 py-2 border-r border-sky-200 w-32">
-                                    <select 
-                                      value={itemData.taskOrMilestone || 'tache'} 
-                                      onChange={(e) => handleInlineChange('taskOrMilestone', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded font-bold text-sky-700 outline-none focus:ring-1 focus:ring-sky-500"
-                                    >
-                                      <option value="tache">Tâche</option>
-                                      <option value="jalon">Jalon</option>
-                                    </select>
-                                  </td>
-
-                                  {/* 2. Activité */}
-                                  <td className="px-2 py-2 border-r border-sky-200 w-44">
-                                    <input 
-                                      type="text" 
-                                      value={itemData.activity || ''} 
-                                      onChange={(e) => handleInlineChange('activity', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white font-semibold text-slate-800" 
-                                      placeholder="Activité support..." 
-                                    />
-                                  </td>
-
-                                  {/* 3. Date Début */}
-                                  <td className="px-2 py-2 border-r border-sky-200 w-28">
-                                    <input 
-                                      type="date" 
-                                      value={itemData.startDate || ''} 
-                                      onChange={(e) => handleInlineChange('startDate', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white" 
-                                    />
-                                  </td>
-
-                                  {/* 4. Date Fin */}
-                                  <td className="px-2 py-2 border-r border-sky-200 w-28">
-                                    <input 
-                                      type="date" 
-                                      value={itemData.endDate || ''} 
-                                      onChange={(e) => handleInlineChange('endDate', e.target.value)} 
-                                      disabled={itemData.taskOrMilestone === 'jalon'}
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white disabled:bg-gray-200 disabled:text-gray-400" 
-                                    />
-                                  </td>
-                                  
-                                  {/* 5. Type */}
-                                  <td className="px-2 py-2 border-r border-sky-200 w-24">
-                                    <span className="text-[10px] font-bold text-slate-500 px-2 py-1 bg-slate-100 rounded">
-                                      {itemData.type === 'tache' ? 'R.' : 'J.'} {itemData.number || 'Nouv.'}
-                                    </span>
-                                  </td>
-                                  
-                                  {/* 6. Responsable */}
-                                  <td className="px-2 py-2 border-r border-sky-200 w-32">
-                                    <input type="text" value={itemData.assignee || ''} onChange={(e) => handleInlineChange('assignee', e.target.value)} className="w-full text-[10px] p-1.5 border border-sky-300 rounded mb-1 bg-white" placeholder="Nom..." />
-                                    <input type="text" value={itemData.responsabilite || ''} onChange={(e) => handleInlineChange('responsabilite', e.target.value)} className="w-full text-[10px] p-1 border border-sky-300 rounded bg-white" placeholder="Rôle..." />
-                                  </td>
-
-                                  {/* Sous-colonnes d'Identification */}
-                                  <td className="px-2 py-2 border-r border-sky-200 w-56">
-                                    <input 
-                                      type="text" 
-                                      value={itemData.name || ''} 
-                                      onChange={(e) => handleInlineChange('name', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded font-bold bg-white" 
-                                      placeholder="Nom de l'incident..." 
-                                      autoFocus 
-                                    />
-                                  </td>
-                                  
-                                  <td className="px-2 py-2 border-r border-sky-200 w-28">
-                                    <input 
-                                      type="date" 
-                                      value={itemData.dateIdentification || ''} 
-                                      onChange={(e) => handleInlineChange('dateIdentification', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white" 
-                                    />
-                                  </td>
-                                  
-                                  <td className="px-2 py-2 border-r border-sky-200 w-32">
-                                    <input 
-                                      type="text" 
-                                      value={itemData.declarePar || ''} 
-                                      onChange={(e) => handleInlineChange('declarePar', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white" 
-                                      placeholder="Nom..." 
-                                    />
-                                  </td>
-                                  
-                                  <td className="px-2 py-2 border-r border-sky-200 w-28">
-                                    <select 
-                                      value={itemData.riskStatus || 'nouveau'} 
-                                      onChange={(e) => handleInlineChange('riskStatus', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white font-bold"
-                                    >
-                                      {DROPDOWNS.riskStatus.map(opt => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                      ))}
-                                    </select>
-                                  </td>
-
-                                  <td className="px-2 py-2 border-r border-sky-200 w-32">
-                                    <select 
-                                      value={itemData.nature || 'politique/ administratif'} 
-                                      onChange={(e) => handleInlineChange('nature', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white font-semibold"
-                                    >
-                                      {DROPDOWNS.nature.map(opt => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                      ))}
-                                    </select>
-                                  </td>
-
-                                  <td className="px-2 py-2 border-r border-sky-200 w-24">
-                                    <select 
-                                      value={itemData.probabilite || 'probable'} 
-                                      onChange={(e) => handleInlineChange('probabilite', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white font-semibold"
-                                    >
-                                      {DROPDOWNS.probabilite.map(opt => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                      ))}
-                                    </select>
-                                  </td>
-
-                                  <td className="px-2 py-2 border-r border-sky-200 w-24">
-                                    <select 
-                                      value={itemData.gravite || 'majeur'} 
-                                      onChange={(e) => handleInlineChange('gravite', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white font-semibold"
-                                    >
-                                      {DROPDOWNS.gravite.map(opt => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                      ))}
-                                    </select>
-                                  </td>
-
-                                  <td className="px-2 py-2 border-r border-sky-200 w-24">
-                                    <select 
-                                      value={itemData.criticite || 'modéré'} 
-                                      onChange={(e) => handleInlineChange('criticite', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white font-semibold"
-                                    >
-                                      {DROPDOWNS.criticite.map(opt => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                      ))}
-                                    </select>
-                                  </td>
-
-                                  <td className="px-2 py-2 border-r border-sky-200 w-28">
-                                    <select 
-                                      value={itemData.consequence || 'délai'} 
-                                      onChange={(e) => handleInlineChange('consequence', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white font-semibold"
-                                    >
-                                      {DROPDOWNS.consequence.map(opt => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                      ))}
-                                    </select>
-                                  </td>
-
-                                  <td className="px-2 py-2 border-r border-sky-200 w-24">
-                                    <select 
-                                      value={itemData.tendance || 'stable'} 
-                                      onChange={(e) => handleInlineChange('tendance', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white font-semibold"
-                                    >
-                                      {DROPDOWNS.tendance.map(opt => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                      ))}
-                                    </select>
-                                  </td>
-
-                                  <td className="px-2 py-2 border-r border-sky-200 w-40">
-                                    <input 
-                                      type="text" 
-                                      value={itemData.actionPreventive || ''} 
-                                      onChange={(e) => handleInlineChange('actionPreventive', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white" 
-                                      placeholder="Préventive..." 
-                                    />
-                                  </td>
-
-                                  <td className="px-2 py-2 border-r border-sky-200 w-40">
-                                    <input 
-                                      type="text" 
-                                      value={itemData.actionCorrective || ''} 
-                                      onChange={(e) => handleInlineChange('actionCorrective', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white" 
-                                      placeholder="Corrective..." 
-                                    />
-                                  </td>
-
-                                  {/* Sous-colonnes de Résolution */}
-                                  <td className="px-2 py-2 border-r border-sky-200 w-28">
-                                    <input 
-                                      type="date" 
-                                      value={itemData.dateResolution || ''} 
-                                      onChange={(e) => handleInlineChange('dateResolution', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white" 
-                                    />
-                                  </td>
-                                  
-                                  <td className="px-2 py-2 border-r border-sky-200 w-40">
-                                    <input 
-                                      type="text" 
-                                      value={itemData.resolutionFinale || ''} 
-                                      onChange={(e) => handleInlineChange('resolutionFinale', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white" 
-                                      placeholder="Détails finaux..." 
-                                    />
-                                  </td>
-                                  
-                                  <td className="px-2 py-2 border-r border-sky-200 w-40">
-                                    <input 
-                                      type="text" 
-                                      value={itemData.commentaire || ''} 
-                                      onChange={(e) => handleInlineChange('commentaire', e.target.value)} 
-                                      className="w-full text-[10px] p-1.5 border border-sky-300 rounded bg-white" 
-                                      placeholder="Notes additionnelles..." 
-                                    />
-                                  </td>
-
-                                  {/* Actions */}
-                                  <td className="px-2 py-2 text-center bg-sky-50/90 sticky right-0 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)] w-20">
-                                    <div className="flex justify-center gap-1.5">
-                                      <button onClick={saveInlineEdit} className="bg-emerald-500 hover:bg-emerald-600 text-white p-2 rounded shadow-sm cursor-pointer" title="Enregistrer"><Save className="w-4 h-4"/></button>
-                                      <button onClick={cancelInlineEdit} className="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded shadow-sm cursor-pointer" title="Annuler"><X className="w-4 h-4"/></button>
-                                    </div>
-                                  </td>
-                                </tr>
-                                );
-                              };
-
-                              const isAddingNew = inlineEdit && inlineEdit.taskId === 'new' && inlineEdit.projectId === project.id && inlineEdit.phase === group.phase;
-
-                              return (
-                                <>
-                                  {group.items.length === 0 && !isAddingNew ? (
-                                    <tr>
-                                      <td colSpan={colSpanCount} className="px-8 py-3 text-left text-slate-400 italic text-[11px] bg-slate-50">
-                                        Aucun incident d'entraînement n'est encore consigné pour cette phase du cycle.
-                                      </td>
-                                    </tr>
-                                  ) : (
-                                    group.items.map((item) => {
-                                      if (inlineEdit && inlineEdit.taskId === item.id) {
-                                        return <React.Fragment key={`edit-${item.id}`}>{renderInlineEditRow(inlineEdit.data)}</React.Fragment>;
-                                      }
-                                      return (
-                                        <tr key={item.id} className="group border-b hover:bg-sky-50/40 transition-colors text-xs bg-slate-50 font-sans">
-                                          {/* 1. Tâche / Jalon */}
-                                          <td className="px-3 py-1.5 text-center border-r border-gray-200 w-32 font-bold">
-                                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                                              (item.taskOrMilestone || item.type) === 'jalon' 
-                                                ? 'bg-orange-100 text-orange-800' 
-                                                : 'bg-blue-100 text-blue-800'
-                                            }`}>
-                                              {(item.taskOrMilestone || item.type) === 'jalon' ? 'Jalon' : 'Tâche'}
-                                            </span>
-                                          </td>
-
-                                          {/* 2. Activité */}
-                                          <td className="px-3 py-1.5 border-r border-gray-200 w-44 font-bold text-slate-700 whitespace-normal leading-tight text-[10.5px]">
-                                            {item.activity || '—'}
-                                          </td>
-
-                                          {/* 3. Date Début */}
-                                          <td className="px-3 py-1.5 text-center border-r border-gray-200 text-slate-600 text-[10px] w-28 font-medium">
-                                            {item.startDate || '—'}
-                                          </td>
-
-                                          {/* 4. Date Fin */}
-                                          <td className="px-3 py-1.5 text-center border-r border-gray-200 text-slate-600 text-[10px] w-28 font-medium">
-                                            {item.endDate || '—'}
-                                          </td>
-
-                                          {/* 5. Type */}
-                                          <td className="px-2 py-1.5 font-bold text-sky-600 border-r border-gray-200 w-24 text-[11px]">
-                                            <div className="flex items-center">
-                                              <span className="w-auto mr-1">{item.type === 'tache' ? `R. ${item.number}` : `J. ${item.number}`}</span>
-                                              {(item.taskOrMilestone || item.type) === 'jalon' && <Diamond className="w-3 h-3 text-amber-500 fill-current shrink-0" />}
-                                            </div>
-                                          </td>
-                                          
-                                          {/* 6. Responsable */}
-                                          <td className="px-2 py-1.5 border-r border-gray-200 text-[11px] w-32">
-                                            <div className="font-bold text-slate-700 truncate">{item.assignee || '—'}</div>
-                                            <div className="text-[9px] text-gray-400 font-normal truncate">{item.responsabilite || '—'}</div>
-                                          </td>
-
-                                          {/* Identification Sub-columns */}
-                                          <td className="px-2 py-1.5 font-semibold text-slate-800 whitespace-normal leading-tight w-56 border-r border-gray-200 text-[10px]">
-                                            {item.name || '—'}
-                                          </td>
-                                          
-                                          <td className="px-2 py-1.5 text-center text-slate-600 border-r border-gray-200 text-[10px] w-28">
-                                            {item.dateIdentification || item.startDate || '—'}
-                                          </td>
-                                          
-                                          <td className="px-2 py-1.5 text-center text-slate-600 border-r border-gray-200 text-[10px] w-32 truncate">
-                                            {item.declarePar || '—'}
-                                          </td>
-                                          
-                                          <td className="px-2 py-1.5 text-center border-r border-gray-200 text-[10px] w-28">
-                                            <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wider ${
-                                              item.riskStatus === 'traité' ? 'bg-green-100 text-green-800 border border-green-200' :
-                                              item.riskStatus === 'en traitement' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
-                                              item.riskStatus === 'bloqué' ? 'bg-rose-100 text-rose-800 border border-rose-200 animate-pulse' :
-                                              'bg-slate-100 text-slate-700 border border-slate-200'
-                                            }`}>
-                                              {item.riskStatus || 'nouveau'}
-                                            </span>
-                                          </td>
-
-                                          <td className="px-2 py-1.5 text-center border-r border-gray-200 text-[10px] w-32 capitalize text-slate-700 truncate">
-                                            {item.nature || '—'}
-                                          </td>
-
-                                          <td className="px-2 py-1.5 text-center border-r border-gray-200 text-[10px] w-24 capitalize font-semibold text-slate-700">
-                                            {item.probabilite || '—'}
-                                          </td>
-
-                                          <td className="px-2 py-1.5 text-center border-r border-gray-200 text-[10px] w-24 capitalize font-semibold text-slate-700">
-                                            {item.gravite || '—'}
-                                          </td>
-
-                                          <td className="px-2 py-1.5 text-center border-r border-gray-200 text-[10px] w-24">
-                                            <span className={`px-2 py-0.5 rounded font-black text-[9px] uppercase ${
-                                              item.criticite === 'tres critique' ? 'bg-red-100 text-red-800' :
-                                              item.criticite === 'critique' ? 'bg-orange-100 text-orange-800' :
-                                              'bg-blue-100 text-blue-800'
-                                            }`}>
-                                              {item.criticite || '—'}
-                                            </span>
-                                          </td>
-
-                                          <td className="px-2 py-1.5 text-center border-r border-gray-200 text-[10px] w-28">
-                                            <span className="bg-sky-50 text-sky-800 px-1.5 py-0.5 rounded font-bold uppercase text-[9px]">
-                                              {item.consequence || '—'}
-                                            </span>
-                                          </td>
-
-                                          <td className="px-2 py-1.5 text-center border-r border-gray-200 text-[10px] w-24">
-                                            <span className={`inline-flex items-center gap-1 font-bold ${
-                                              item.tendance === 'hausse' ? 'text-rose-600' :
-                                              item.tendance === 'baisse' ? 'text-emerald-600' :
-                                              'text-slate-500'
-                                            }`}>
-                                              {item.tendance === 'hausse' ? '▲ Hausse' :
-                                               item.tendance === 'baisse' ? '▼ Baisse' :
-                                               '◀▶ Stable'}
-                                            </span>
-                                          </td>
-
-                                          <td className="px-2 py-1.5 border-r border-gray-200 text-[10px] w-40 max-w-[160px] truncate text-slate-600 italic" title={item.actionPreventive}>
-                                            {item.actionPreventive || '—'}
-                                          </td>
-
-                                          <td className="px-2 py-1.5 border-r border-gray-200 text-[10px] w-40 max-w-[160px] truncate text-slate-600 italic" title={item.actionCorrective}>
-                                            {item.actionCorrective || '—'}
-                                          </td>
-
-                                          {/* Résolution Sub-columns */}
-                                          <td className="px-2 py-1.5 text-center border-r border-gray-200 text-[10px] w-28 text-slate-600">
-                                            {item.dateResolution || '—'}
-                                          </td>
-                                          
-                                          <td className="px-2 py-1.5 border-r border-gray-200 text-[10px] w-40 max-w-[160px] truncate text-slate-700 font-medium" title={item.resolutionFinale}>
-                                            {item.resolutionFinale || '—'}
-                                          </td>
-                                          
-                                          <td className="px-2 py-1.5 border-r border-gray-200 text-[10px] w-40 max-w-[160px] truncate text-slate-500" title={item.commentaire}>
-                                            {item.commentaire || '—'}
-                                          </td>
-                                          
-                                          {/* Actions */}
-                                          <td className="px-2 py-1.5 text-center bg-white sticky right-0 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)] w-20">
-                                            {taskDeleteConfirmation === item.id ? (
-                                              <div className="flex flex-col gap-1 items-center animate-in fade-in">
-                                                <span className="text-[8px] text-red-600 font-bold leading-none uppercase">Sûr ?</span>
-                                                <div className="flex gap-1">
-                                                  <button onClick={() => handleDeleteTask(project.dossierId || '', project.axeId || '', project.id, item.id)} className="bg-red-600 text-white px-1.5 py-0.5 rounded text-[9px] font-bold cursor-pointer">Oui</button>
-                                                  <button onClick={() => setTaskDeleteConfirmation(null)} className="bg-gray-300 text-gray-800 px-1.5 py-0.5 rounded text-[9px] font-bold cursor-pointer">Non</button>
-                                                </div>
-                                              </div>
-                                            ) : (
-                                              <div className="flex justify-center gap-2">
-                                                <button onClick={() => openInlineEdit(project.dossierId || '', project.axeId || '', project.id, item)} className="text-sky-600 hover:bg-sky-50 p-1.5 rounded cursor-pointer" title="Modifier">
-                                                  <Edit className="w-3.5 h-3.5"/>
-                                                </button>
-                                                <button onClick={() => setTaskDeleteConfirmation(item.id)} className="text-red-400 hover:bg-red-50 p-1.5 rounded cursor-pointer" title="Supprimer">
-                                                  <Trash2 className="w-3.5 h-3.5"/>
-                                                </button>
-                                              </div>
-                                            )}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })
-                                  )}
-                                  
-                                  {isAddingNew && renderInlineEditRow(inlineEdit.data)}
-                                </>
-                              );
-                            })()}
-                          </React.Fragment>
-                        ))}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderGantt = () => {
-    let filteredProjects = allProjects;
-    if (filterGanttAxe !== 'FULL') filteredProjects = filteredProjects.filter(p => p.axeId === filterGanttAxe);
-    if (filterGanttProj !== 'FULL') filteredProjects = filteredProjects.filter(p => p.id === filterGanttProj);
-
-    const enrichedProjects = filteredProjects.map(project => {
-      const phaseGroups = STANDARD_PHASES.map(phaseName => {
-        const pTasks = Array.isArray(project.tasks) ? project.tasks.filter(t => t.phase === phaseName) : [];
-        let minStart = Infinity;
-        pTasks.forEach(t => {
-            const d = new Date(t.dateIdentification || t.startDate).getTime();
-            if (!isNaN(d) && d < minStart) minStart = d;
-        });
-        return { phase: phaseName, tasks: pTasks, minStart };
-      });
-
-      phaseGroups.sort((a, b) => {
-        if (a.minStart === Infinity && b.minStart === Infinity) return STANDARD_PHASES.indexOf(a.phase) - STANDARD_PHASES.indexOf(b.phase);
-        if (a.minStart === Infinity) return 1;
-        if (b.minStart === Infinity) return -1;
-        return a.minStart - b.minStart;
-      });
-
-      phaseGroups.forEach(group => {
-        group.tasks.sort((a, b) => {
-          const dA = new Date(a.dateIdentification || a.startDate).getTime();
-          const dB = new Date(b.dateIdentification || b.startDate).getTime();
-          if (isNaN(dA) && isNaN(dB)) return 0;
-          if (isNaN(dA)) return 1;
-          if (isNaN(dB)) return -1;
-          return dA - dB;
-        });
-      });
-
-      const groups = phaseGroups.map((group, phaseIndex) => {
-        const items = group.tasks.map((t, idx) => {
-          return { 
-            ...t, 
-            number: `${phaseIndex + 1}.${idx + 1}`
-          };
-        });
-        return { phase: group.phase, items };
-      });
-      return { ...project, groups };
-    });
-
-    let totalMinStart = Infinity;
-    let totalMaxEnd = -Infinity;
-    let hasTotalValidDates = false;
-
-    enrichedProjects.forEach(project => {
-      project.groups.forEach(group => {
-        group.items.forEach(t => {
-          const sd = new Date(t.dateIdentification || t.startDate).getTime();
-          const ed = new Date(t.dateResolution || t.endDate).getTime();
-          if (!isNaN(sd) && !isNaN(ed)) {
-            hasTotalValidDates = true;
-            if (sd < totalMinStart) totalMinStart = sd;
-            if (ed > totalMaxEnd) totalMaxEnd = ed;
-          }
-        });
-      });
-    });
-
-    let totalCpmText: string | null = null;
-    if (hasTotalValidDates) {
-      const diffDays = Math.ceil((totalMaxEnd - totalMinStart) / (1000 * 60 * 60 * 24)) + 1;
-      if (diffDays >= 365) {
-          const years = (diffDays / 365).toFixed(1);
-          totalCpmText = `${years} an${Number(years) > 1 ? 's' : ''} (${diffDays} j)`;
-      } else if (diffDays >= 30) {
-          const months = (diffDays / 30).toFixed(1);
-          totalCpmText = `~${months} mois (${diffDays} j)`;
-      } else {
-          totalCpmText = `${diffDays} jour${diffDays > 1 ? 's' : ''}`;
-      }
-    }
-
-    return (
-      <div className="animate-in fade-in duration-500 pb-10 flex flex-col h-full font-sans">
-        <div className="flex justify-between items-center border-b pb-1 border-sky-200 shrink-0 mb-4">
-          <h2 className="text-lg font-bold text-gray-800 flex items-center"><CalendarDays className="w-5 h-5 mr-2 text-sky-500" /> Chronogramme d'exposition aux Risques</h2>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-4 shrink-0">
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1" /> 1. Filtrer par Axe Stratégique
-            </label>
-            <div className="relative">
-              <select 
-                className="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-800 text-sm font-medium rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-                value={filterGanttAxe}
-                onChange={(e) => { 
-                  setFilterGanttAxe(e.target.value); 
-                  setFilterGanttProj('FULL');
-                }}
-              >
-                <option value="FULL">Toutes les données (Vue Globale)</option>
-                {activeDossier?.axes?.map(axe => (
-                  <option key={axe.id} value={axe.id}>{axe.name}</option>
-                ))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-gray-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1" /> 2. Filtrer par Projet OP
-            </label>
-            <div className="relative">
-              <select 
-                className="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-800 text-sm font-medium rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-                value={filterGanttProj}
-                onChange={(e) => setFilterGanttProj(e.target.value)}
-              >
-                <option value="FULL">Tous les projets {filterGanttAxe !== 'FULL' ? 'de cet axe' : ''}</option>
-                {allProjects
-                  .filter(p => filterGanttAxe === 'FULL' || p.axeId === filterGanttAxe)
-                  .map((proj, idx) => (
-                    <option key={proj.id} value={proj.id}>{idx + 1}. {proj.name}</option>
-                  ))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-gray-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden mb-6">
-          <div className="p-4 border-b border-gray-200 bg-gray-50/50 shrink-0 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
-            <h2 className="text-base font-bold text-gray-800 flex items-center">
-              <CalendarDays className="w-5 h-5 mr-2 text-sky-600" />
-              Planification Temporelle d'exposition
-            </h2>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center space-x-3 px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm bg-white text-xs font-bold text-slate-600">
-                <div className="flex items-center"><div className="w-3 h-1.5 bg-sky-300 rounded mr-1.5"></div>Actif (En attente)</div>
-                <div className="flex items-center"><div className="w-3 h-1.5 bg-emerald-500 rounded mr-1.5"></div>Résolu</div>
-              </div>
-              
-              {totalCpmText && (
-                <div className="flex items-center space-x-2 px-4 py-1.5 rounded-lg border border-sky-300 shadow-inner bg-gradient-to-r from-sky-50 to-sky-100 text-xs font-black text-sky-800">
-                  <Activity className="w-4 h-4 text-sky-600 animate-pulse" />
-                  <span className="uppercase tracking-widest">Horizon : {totalCpmText}</span>
-                </div>
-              )}
-
-              <div className="flex items-center space-x-3 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm text-sm flex-wrap">
-                <Filter className="w-4 h-4 text-gray-400" />
-                <span className="font-bold text-gray-600 text-xs">Vue :</span>
-                <select value={ganttViewMode} onChange={e => setGanttViewMode(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-xs cursor-pointer">
-                  <option value="jour">Jours</option>
-                  <option value="semaine">Semaines</option>
-                  <option value="mois">Mois</option>
-                  <option value="trimestre">Trimestres</option>
-                  <option value="semestre">Semestres</option>
-                </select>
-                <div className="h-4 w-px bg-gray-300 mx-2"></div>
-                <span className="font-bold text-gray-600 text-xs">Période :</span>
-                <input type="month" value={ganttStartMonth} onChange={e => setGanttStartMonth(e.target.value)} className="border border-gray-300 rounded px-1.5 py-1 text-xs cursor-pointer"/>
-                <span className="text-gray-400 font-bold text-xs">à</span>
-                <input type="month" value={ganttEndMonth} onChange={e => setGanttEndMonth(e.target.value)} className="border border-gray-300 rounded px-1.5 py-1 text-xs cursor-pointer"/>
-              </div>
-            </div>
-          </div>
-          
-          <div className="overflow-x-auto relative max-h-[600px] hide-scrollbar">
-            <table className="w-full text-left text-sm whitespace-nowrap min-w-max">
-              <thead className="bg-slate-800 text-white text-xs shadow-md sticky top-0 z-40">
-                <tr>
-                  <th className="px-2 py-3 border-b border-slate-700 border-r border-slate-600 sticky left-0 bg-slate-800 z-50 w-24 text-[10px] uppercase" rowSpan={2}>Risque</th>
-                  <th className="px-3 py-3 border-b border-slate-700 border-r border-slate-600 sticky left-[96px] bg-slate-800 z-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)] w-48 text-[10px] uppercase" rowSpan={2}>Intitulé</th>
-                  <th className="px-1 py-3 border-b border-slate-700 border-r text-center w-16 text-[10px] uppercase" rowSpan={2}>Criticité</th>
-                  {ganttParents.map((parent, idx) => (
-                    <th key={idx} className="px-4 py-1.5 border-b border-slate-700 border-r text-center font-bold" colSpan={parent.count}>{parent.label}</th>
-                  ))}
-                </tr>
-                <tr className="bg-slate-700">
-                  {ganttColumns.map((col, i) => (
-                    <th key={i} className="px-2 py-1.5 text-center border-r border-slate-600 text-[10px] min-w-[40px]">
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
-                {enrichedProjects.length === 0 && (
-                  <tr><td colSpan={3 + ganttColumns.length} className="text-center py-12 text-gray-400 italic">Aucun incident ne correspond à cette sélection.</td></tr>
-                )}
-                {enrichedProjects.map(project => {
-                  return (
-                    <React.Fragment key={`gantt-p-${project.id}`}>
-                      <tr className="bg-gray-200 border-b">
-                        <td colSpan={3 + ganttColumns.length} className="px-4 py-3 font-bold text-gray-800 text-sm bg-gray-200 z-20 relative">
-                          <div className="flex justify-between items-center w-max sticky left-4 z-40">
-                            <span className="flex items-center">
-                              Projet : <span className="text-sky-600 ml-1 font-black">{project.name || ''}</span>
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                      
-                      {project.groups.map((group, idx) => (
-                        <React.Fragment key={`gantt-${project.id}-phase-${idx}`}>
-                          {(() => {
-                            let phaseSpanText: string | null = null;
-                            if (group.items && group.items.length > 0) {
-                              let minStart = Infinity;
-                              let maxEnd = -Infinity;
-                              let hasValidDates = false;
-
-                              group.items.forEach(t => {
-                                const sd = new Date(t.dateIdentification || t.startDate).getTime();
-                                const ed = new Date(t.dateResolution || t.endDate).getTime();
-                                if (!isNaN(sd) && !isNaN(ed)) {
-                                  hasValidDates = true;
-                                  if (sd < minStart) minStart = sd;
-                                  if (ed > maxEnd) maxEnd = ed;
-                                }
-                              });
-
-                              if (hasValidDates) {
-                                const diffDays = Math.ceil((maxEnd - minStart) / (1000 * 60 * 60 * 24)) + 1;
-                                if (diffDays >= 365) {
-                                    const years = (diffDays / 365).toFixed(1);
-                                    phaseSpanText = `Cycle : ${years} an${Number(years) > 1 ? 's' : ''} (${diffDays} j)`;
-                                } else if (diffDays >= 30) {
-                                    const months = (diffDays / 30).toFixed(1);
-                                    phaseSpanText = `Cycle : ~${months} mois (${diffDays} j)`;
-                                } else {
-                                    phaseSpanText = `Cycle : ${diffDays} jour${diffDays > 1 ? 's' : ''}`;
-                                }
-                              }
-                            }
-
-                            return (
-                              <tr className="bg-slate-700 border-b border-slate-600">
-                                <td colSpan={3 + ganttColumns.length} className="p-0">
-                                  <div className="px-4 py-2 w-max text-sky-200 font-bold text-xs uppercase tracking-widest flex items-center sticky left-4 z-40">
-                                    <span>PHASE : {group.phase}</span>
-                                    {phaseSpanText && (
-                                      <span className="ml-6 text-sky-300 font-black text-[10px] bg-slate-800/80 px-2.5 py-0.5 rounded-full border border-sky-500/30 shadow-sm whitespace-nowrap tracking-normal flex items-center">
-                                        <Activity className="w-3 h-3 mr-1" />
-                                        {phaseSpanText}
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })()}
-                          
-                          {group.items.length === 0 ? (
-                            <tr>
-                              <td colSpan={3 + ganttColumns.length} className="px-8 py-3 text-left text-slate-400 italic text-[11px] bg-slate-50">
-                                Aucun risque n'est encore enregistré pour cette phase.
-                              </td>
-                            </tr>
-                          ) : (
-                            group.items.map((item) => (
-                              <tr key={`gantt-t-${item.id}`} className="group border-b hover:bg-sky-50/40 transition-colors text-xs bg-slate-50">
-                                <td className="px-2 py-3 font-bold text-sky-600 sticky left-0 bg-slate-50 group-hover:bg-sky-50 z-30 border-r border-gray-200 w-24 text-[11px]">
-                                  <div className="flex items-center">
-                                    <span className="w-auto mr-1 truncate">{item.type === 'tache' ? `R. ${item.number}` : `J. ${item.number}`}</span>
-                                    {(item.taskOrMilestone || item.type) === 'jalon' && <Diamond className="w-3 h-3 text-amber-500 fill-current shrink-0" />}
-                                  </div>
-                                </td>
-                                <td className="px-2 py-3 font-bold text-slate-800 border-r border-gray-200 text-[11px] sticky left-[96px] bg-slate-50 group-hover:bg-sky-50 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] w-48 truncate">{item.name || ''}</td>
-                                <td className="px-1 py-3 text-slate-600 text-center font-bold border-r border-gray-200 bg-slate-50/50 text-[10px] w-16 uppercase">{item.criticite || '—'}</td>
-                                
-                                {ganttColumns.map((col, i) => {
-                                  const sd = new Date(item.dateIdentification || item.startDate);
-                                  const ed = new Date(item.dateResolution || item.endDate || item.startDate);
-                                  
-                                  const isTraité = item.riskStatus === 'traité';
-                                  const colStart = col.start.getTime();
-                                  const colEnd = col.end.getTime();
-
-                                  let pActive = false, pStart = false, pEnd = false;
-                                  if (!isNaN(sd.getTime())) {
-                                    const st = sd.getTime();
-                                    const et = ed && !isNaN(ed.getTime()) ? ed.getTime() : st + (24*60*60*1000*30);
-                                    pActive = st <= colEnd && et >= colStart;
-                                    pStart = st >= colStart && st <= colEnd;
-                                    pEnd = et >= colStart && et <= colEnd;
-                                  }
-
-                                  const isJalon = (item.taskOrMilestone || item.type) === 'jalon';
-
-                                  let pClasses = `absolute top-3 h-2 ${isTraité ? 'bg-emerald-400' : 'bg-red-400'} z-10 transition-all `;
-                                  if (isJalon) {
-                                      pClasses = 'absolute top-2 h-4 w-4 bg-sky-300 rounded-full z-10 left-1/2 -translate-x-1/2 flex items-center justify-center shadow-sm';
-                                  } else {
-                                      if (pStart && pEnd) pClasses += 'left-1 right-1 rounded-full';
-                                      else if (pStart) pClasses += 'left-1 right-[-1px] rounded-l-full';
-                                      else if (pEnd) pClasses += 'left-0 right-1 rounded-r-full';
-                                      else pClasses += 'left-0 right-[-1px]';
-                                  }
-
-                                  return (
-                                    <td key={i} className={`p-0 border-r border-gray-100 min-w-[40px] h-10 relative ${pActive ? 'bg-slate-50/50' : ''}`}>
-                                      {pActive && (
-                                        <div className={pClasses} title={`Exposition : ${item.name} (${sd.toLocaleDateString('fr-FR')} - ${ed ? ed.toLocaleDateString('fr-FR') : 'En cours'})`}>
-                                          {isJalon && <Diamond className="w-2.5 h-2.5 text-white fill-current" />}
-                                        </div>
-                                      )}
-                                    </td>
-                                  )
-                                })}
-                              </tr>
-                            ))
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderKanban = () => {
-    let filteredProjects = allProjects;
-    if (filterKanbanAxe !== 'FULL') filteredProjects = filteredProjects.filter(p => p.axeId === filterKanbanAxe);
-    if (filterKanbanProj !== 'FULL') filteredProjects = filteredProjects.filter(p => p.id === filterKanbanProj);
-    const validProjIds = filteredProjects.map(p => p.id);
-
-    const tasksToRender = allTasks
-      .filter(t => validProjIds.includes(t.projectId || ''))
-      .sort((a, b) => {
-        const dA = new Date(a.dateIdentification || a.startDate).getTime();
-        const dB = new Date(b.dateIdentification || b.startDate).getTime();
-        if (isNaN(dA) && isNaN(dB)) return 0;
-        if (isNaN(dA)) return 1;
-        if (isNaN(dB)) return -1;
-        return dA - dB;
-      });
-    
-    const cols = [
-      { id: 'nouveau', title: 'Nouveau', color: 'border-gray-300', bg: 'bg-gray-100' },
-      { id: 'en traitement', title: 'En cours', color: 'border-sky-400', bg: 'bg-sky-50' },
-      { id: 'bloqué', title: 'Bloqué', color: 'border-rose-400', bg: 'bg-rose-50' },
-      { id: 'traité', title: 'Traité', color: 'border-green-400', bg: 'bg-green-50' }
-    ];
-
-    const handleDragStart = (e: React.DragEvent, task: TaskItem) => {
-      if (task.isReadOnly) {
-        e.preventDefault();
-        return;
-      }
-      e.dataTransfer.setData('taskId', task.id);
-      e.dataTransfer.setData('projectId', task.projectId || '');
-      e.dataTransfer.setData('axeId', task.axeId || '');
-      e.dataTransfer.setData('dossierId', task.dossierId || '');
-    };
-
-    const handleDrop = (e: React.DragEvent, newRiskStatus: string) => {
-      e.preventDefault();
-      const taskId = e.dataTransfer.getData('taskId');
-      const projectId = e.dataTransfer.getData('projectId');
-      const axeId = e.dataTransfer.getData('axeId');
-      const dossierId = e.dataTransfer.getData('dossierId');
-      
-      if (taskId && projectId && axeId && dossierId) {
-        let matchedStatus = 'À faire';
-        if (newRiskStatus === 'traité') matchedStatus = 'Terminé';
-        if (newRiskStatus === 'en traitement') matchedStatus = 'En cours';
-        if (newRiskStatus === 'bloqué') matchedStatus = 'Bloqué';
-        
-        setData(data.map(d => {
-          if (d.id !== dossierId) return d;
-          return {
-            ...d, axes: d.axes.map(a => {
-              if (a.id !== axeId) return a;
-              return {
-                ...a, projects: a.projects.map(p => {
-                  if (p.id !== projectId) return p;
-                  return {
-                    ...p, tasks: p.tasks.map(t => {
-                      if (t.id === taskId) {
-                        return { ...t, riskStatus: newRiskStatus, status: matchedStatus };
-                      }
-                      return t;
-                    })
-                  };
-                })
-              };
-            })
-          };
-        }));
-      }
-    };
-
-    return (
-      <div className="animate-in fade-in duration-500 pb-10 flex flex-col h-full font-sans">
-        <div className="flex justify-between items-center border-b pb-1 border-sky-200 shrink-0 mb-4">
-          <h2 className="text-lg font-bold text-gray-800 flex items-center"><Grid className="w-5 h-5 mr-2 text-sky-500" /> Tableau Kanban des Risques</h2>
-        </div>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-4 shrink-0">
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1" /> 1. Filtrer par Axe Stratégique
-            </label>
-            <div className="relative">
-              <select 
-                className="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-800 text-sm font-medium rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-                value={filterKanbanAxe}
-                onChange={(e) => { 
-                  setFilterKanbanAxe(e.target.value); 
-                  setFilterKanbanProj('FULL');
-                }}
-              >
-                <option value="FULL">Toutes les données (Vue Globale)</option>
-                {activeDossier?.axes?.map(axe => (
-                  <option key={axe.id} value={axe.id}>{axe.name}</option>
-                ))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-gray-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center">
-              <Filter className="w-3 h-3 mr-1" /> 2. Filtrer par Projet OP
-            </label>
-            <div className="relative">
-              <select 
-                className="w-full appearance-none bg-gray-50 border border-gray-300 text-gray-800 text-sm font-medium rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 p-2.5 pr-8 outline-none transition-shadow cursor-pointer"
-                value={filterKanbanProj}
-                onChange={(e) => setFilterKanbanProj(e.target.value)}
-              >
-                <option value="FULL">Tous les projets {filterKanbanAxe !== 'FULL' ? 'de cet axe' : ''}</option>
-                {allProjects
-                  .filter(p => filterKanbanAxe === 'FULL' || p.axeId === filterKanbanAxe)
-                  .map((proj, idx) => (
-                    <option key={proj.id} value={proj.id}>{idx + 1}. {proj.name}</option>
-                ))}
-              </select>
-              <ChevronRight className="w-4 h-4 text-gray-400 absolute right-3 top-3 rotate-90 pointer-events-none" />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-4 overflow-x-auto pb-4 h-full items-start">
-          {cols.map(col => (
-            <div 
-              key={col.id} 
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => handleDrop(e, col.id)}
-              className={`${col.bg} p-3 rounded-lg min-w-[300px] flex-1 flex flex-col max-h-full border border-gray-200 shadow-sm transition-colors duration-200`}
-            >
-              <h3 className="font-bold border-b border-gray-200 pb-2 mb-3 text-gray-700 flex justify-between items-center text-xs uppercase tracking-wider">
-                {col.title} <span className="bg-white text-xs px-2.5 py-1 rounded-full shadow-sm font-black">{tasksToRender.filter(t => (t.riskStatus || 'nouveau') === col.id).length}</span>
-              </h3>
-              <div className="flex-1 overflow-y-auto pr-1 space-y-3 hide-scrollbar min-h-[150px]">
-                {tasksToRender.filter(t => (t.riskStatus || 'nouveau') === col.id).length === 0 && (
-                  <div className="text-center text-xs text-gray-400 italic py-8 pointer-events-none">Aucun risque ici.</div>
-                )}
-                {tasksToRender.filter(t => (t.riskStatus || 'nouveau') === col.id).map(task => (
-                  <KanbanCard key={task.id} task={task} borderColor={col.color} onDragStart={handleDragStart} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <div className="min-h-screen bg-sky-50/20 flex flex-col font-sans text-slate-800">
-      <header className="bg-white border-b border-gray-200 shadow-sm px-6 py-3 flex justify-between items-center shrink-0 z-50 relative font-sans">
-        <div className="flex items-center space-x-3">
-          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 -ml-2 mr-1 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-200 cursor-pointer"><Menu className="w-5 h-5" /></button>
-          <div className="w-10 h-10 bg-sky-600 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-inner uppercase tracking-wider">{currentInstitution.substring(0, 4)}</div>
-          <div>
-            <h1 className="text-xl font-black text-gray-800 leading-none tracking-tight uppercase">{currentInstitution}</h1>
-            <p className="text-xs text-sky-600 font-bold tracking-wide uppercase mt-0.5">
-              {isExploring && activeDossier ? activeDossier.name : "Suivi des risques & performance"}
-            </p>
-          </div>
+    <div
+      className={`min-h-screen flex flex-col ${
+        !isUnlocked || activeTab === 'accueil'
+          ? 'bg-transparent'
+          : 'bg-slate-50 dark:bg-slate-950'
+      } text-slate-900 dark:text-slate-100`}
+    >
+      {/* Hidden JSON & CSV File Inputs */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        onChange={handleImportJSON}
+        className="hidden"
+      />
+      <input
+        ref={csvPlanInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        onChange={handleImportPlanificationCSV}
+        className="hidden"
+      />
+      <input
+        ref={csvRaciInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        onChange={handleImportRaciCSV}
+        className="hidden"
+      />
+
+      {/* Slidebar Drawer */}
+      {renderSlidebar()}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 z-50 bg-orange-800 text-white px-4 py-2.5 rounded-xl shadow-xl border border-orange-400 flex items-center gap-2 text-xs font-bold">
+          <CheckCircle2 className="w-4 h-4 text-orange-200 shrink-0" />
+          <span>{toastMessage}</span>
         </div>
+      )}
+
+      {/* MOBILE ONLY ON OTHER TABS (activeTab !== 'accueil'): Burger Icon (Regular Users) + App Icon right next to it */}
+      {isUnlocked && activeTab !== 'accueil' && (
+        <div className="md:hidden fixed top-2 left-2 z-40 flex items-center gap-1.5 no-print">
+          {isRegularUserUnlocked && (
+            <button
+              onClick={() => setIsSlidebarOpen(true)}
+              aria-label="Ouvrir le menu déroulant"
+              title="Menu FAAB RISK"
+              className="w-10 h-10 rounded-xl bg-orange-700 text-orange-200 hover:bg-orange-400 hover:text-slate-950 flex items-center justify-center transition-all border border-orange-400/70 shadow-md cursor-pointer shrink-0"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+          )}
+
+          <button
+            onClick={() => navigateTo('accueil')}
+            aria-label="Accueil FAAB RISK"
+            title="Accueil FAAB RISK"
+            className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl flex items-center justify-center cursor-pointer shrink-0 hover:scale-105 transition-transform"
+          >
+            <AppLogo className="w-full h-full" />
+          </button>
+        </div>
+      )}
+
+      {/* INSTITUTIONAL NAVBAR: Locked at top of screen on scroll (fixed top-0 left-0 right-0 z-40). Visible on ALL screens on Home Page (accueil), and on Tablet/Desktop (md:block) on other tabs (No header on Mobile on other tabs) */}
+      <header
+        className={`${
+          !isUnlocked || activeTab === 'accueil' ? 'block' : 'hidden md:block'
+        } fixed top-0 left-0 right-0 z-40 bg-orange-800 text-white border-b-2 border-orange-400 shadow-md no-print`}
+      >
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-0 h-[84px] flex items-center gap-2 sm:gap-3">
+          {/* Burger Menu Button (STRICT DOM REMOVAL: Only mounted when Regular User is unlocked; Super Admin has a dedicated Console button) */}
+          {isRegularUserUnlocked && (
+            <button
+              onClick={() => setIsSlidebarOpen(true)}
+              aria-label="Ouvrir le menu déroulant"
+              title="Ouvrir le menu déroulant"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-orange-950/80 text-orange-200 hover:bg-orange-400 hover:text-slate-950 flex items-center justify-center transition-all border border-orange-400/60 shadow-sm cursor-pointer shrink-0"
+            >
+              <Menu className="w-5 h-5 sm:w-6 sm:h-6" />
+            </button>
+          )}
+          {isSuperAdminUnlocked && activeTab === 'accueil' && (
+            <button
+              onClick={() => navigateTo('super_admin')}
+              aria-label="Ouvrir la Console Super Admin"
+              title="Ouvrir la Console Super Admin"
+              className="px-3 h-9 sm:h-10 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center gap-1.5 transition-all border border-amber-300 shadow-sm cursor-pointer shrink-0 text-xs font-black uppercase tracking-wider"
+            >
+              <ShieldCheck className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Console Admin</span>
+            </button>
+          )}
+
+          <div
+            onClick={() => navigateTo('accueil')}
+            className="flex items-center gap-2.5 sm:gap-3 cursor-pointer select-none min-w-0 flex-1"
+          >
+            <div className="w-20 h-20 sm:w-28 sm:h-28 md:w-32 md:h-32 shrink-0 flex items-center justify-center -my-2 sm:-my-3.5 md:-my-4">
+              <AppLogo className="w-full h-full drop-shadow-lg" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-black tracking-wider uppercase text-white leading-tight truncate">
+                FAAB RISK
+              </h1>
+              <p className="text-[10px] sm:text-[11px] font-semibold text-orange-200 leading-tight truncate">
+                {t.appSubtitle}
+              </p>
+            </div>
+          </div>
+
+          {/* Bouton en icône "Mise à jour" sur la page d'accueil pour recharger et actualiser l'application */}
+          {(!isUnlocked || activeTab === 'accueil') && (
+            <button
+              type="button"
+              onClick={async () => {
+                showToast(
+                  language === 'EN'
+                    ? 'Updating FAAB RISK application...'
+                    : 'Mise à jour et rechargement de FAAB RISK en cours...'
+                );
+                try {
+                  if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(
+                      regs.map(async reg => {
+                        try {
+                          reg.active?.postMessage({ type: 'CLEAR_AND_UPDATE' });
+                          reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+                          await reg.update();
+                        } catch {
+                          // ignore
+                        }
+                      })
+                    );
+                  }
+                  if ('caches' in window) {
+                    const keys = await window.caches.keys();
+                    await Promise.all(keys.map(k => window.caches.delete(k)));
+                  }
+                } catch {
+                  // ignore
+                }
+                setTimeout(() => {
+                  window.location.reload();
+                }, 300);
+              }}
+              title={
+                language === 'EN'
+                  ? 'Update & Reload FAAB RISK Application'
+                  : 'Mise à jour : Recharger l’application pour la mettre à jour'
+              }
+              aria-label={language === 'EN' ? 'Update App' : 'Mise à jour'}
+              className="inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-300 transition-all cursor-pointer shrink-0 shadow-sm"
+            >
+              <RefreshCw className="w-4 h-4 shrink-0" />
+            </button>
+          )}
+
+          {/* Le bouton de Scanner QR / Badge apparaît UNIQUEMENT dans l'espace Utilisateur déverrouillé (jamais pour Super Admin ni sur l'accueil) */}
+          {isRegularUserUnlocked && activeTab !== 'accueil' && (
+            <button
+              type="button"
+              onClick={() => setIsGlobalScannerOpen(true)}
+              title={
+                language === 'EN'
+                  ? 'Scan QR Code (vCard) or Badge Barcode (CODE-128)'
+                  : 'Scanner un QR Code (vCard) ou Code-Barres Badge (CODE-128)'
+              }
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 h-8 sm:h-9 rounded-xl bg-orange-950/90 hover:bg-orange-400 text-orange-200 hover:text-slate-950 border border-orange-400/60 text-[10px] sm:text-xs font-extrabold transition-all cursor-pointer shrink-0 shadow-sm"
+            >
+              <QrCode className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">
+                {language === 'EN' ? 'QR / Badge Scanner' : 'Scanner QR / Badge'}
+              </span>
+            </button>
+          )}
+
+          {/* Bouton d'État Authentification Google / Gmail */}
+          <AuthStatusButton
+            user={authUser}
+            isAuthLoading={isAuthLoading}
+            isSigningIn={isSigningIn}
+            onSignIn={handleGoogleSignIn}
+            onSignOut={handleSignOut}
+            language={language}
+            variant="header"
+            onLockDevice={() => {
+              setIsDeviceLocked(true);
+              setSuperAdminAuthModalStep('device_locked');
+              setIsSuperAdminAuthModalOpen(true);
+            }}
+          />
+        </div>
+
+        {/* BARRE DE NAVIGATION DES SECTIONS DE LA PAGE D'ACCUEIL (Uniquement sur la page d'accueil, en dessous du logo et de l'intitulé) */}
+        {(!isUnlocked || activeTab === 'accueil') && (
+          <nav
+            aria-label="Sections explicatives de la page d'accueil"
+            className="border-t border-orange-700/80 bg-amber-950/95 backdrop-blur-xs relative"
+          >
+            <div
+              ref={homeNavScrollRef}
+              className="max-w-7xl mx-auto py-1 flex items-center gap-2 sm:gap-3 overflow-x-auto hide-scrollbar scroll-smooth"
+            >
+              {/* Left spacer so the first section title can also position horizontally at the exact center of the navbar */}
+              <div
+                className="shrink-0 w-[36vw] sm:w-[40vw] lg:w-[42%]"
+                aria-hidden="true"
+              />
+              {[
+                {
+                  id: 'section-presentation',
+                  label:
+                    language === 'FR'
+                      ? '1. Présentation Générale'
+                      : '1. Overview'
+                },
+                {
+                  id: 'section-utilisation',
+                  label:
+                    language === 'FR'
+                      ? '2. Mode d’Emploi & Modules'
+                      : '2. Modules & Workflow'
+                },
+                {
+                  id: 'section-documents',
+                  label:
+                    language === 'FR'
+                      ? '3. Documents & Matrices'
+                      : '3. 22 Documents & Matrices'
+                },
+                {
+                  id: 'section-cibles',
+                  label:
+                    language === 'FR'
+                      ? '4. Publics Cibles & Domaines'
+                      : '4. Target Audiences & Sectors'
+                },
+                {
+                  id: 'section-offres',
+                  label:
+                    language === 'FR'
+                      ? '5. Offres Commerciales'
+                      : '5. Commercial Plans'
+                },
+                {
+                  id: 'section-methodologie',
+                  label:
+                    language === 'FR'
+                      ? '6. Méthodologie GAR & PERT'
+                      : '6. RBM & PERT Methodology'
+                },
+                {
+                  id: 'section-sauvegarde',
+                  label:
+                    language === 'FR'
+                      ? '7. Sauvegarde JSON'
+                      : '7. JSON Backup'
+                },
+                {
+                  id: 'section-credits',
+                  label:
+                    language === 'FR'
+                      ? '8. Crédits & Légal'
+                      : '8. Credits & Legal'
+                }
+              ].map(sec => {
+                const isActiveSec = activeHomeSection === sec.id;
+                return (
+                  <button
+                    key={sec.id}
+                    ref={el => {
+                      homeNavBtnRefs.current[sec.id] = el;
+                    }}
+                    type="button"
+                    aria-current={isActiveSec ? 'location' : undefined}
+                    onClick={() => {
+                      setActiveHomeSection(sec.id);
+                      const el = document.getElementById(sec.id);
+                      if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
+                    }}
+                    className={`px-2.5 sm:px-3 py-1 rounded-lg text-[10px] sm:text-xs font-extrabold tracking-tight whitespace-nowrap transition-all duration-300 cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                      isActiveSec
+                        ? 'bg-orange-400 text-slate-950 border-2 border-white ring-2 ring-orange-400/70 shadow-lg scale-105'
+                        : 'bg-orange-950/60 hover:bg-orange-400/80 text-orange-100/80 hover:text-slate-950 border border-orange-400/30 hover:border-orange-400 opacity-80 hover:opacity-100 scale-95'
+                    }`}
+                  >
+                    {isActiveSec && (
+                      <span className="w-2 h-2 rounded-full bg-orange-700 animate-pulse shrink-0" />
+                    )}
+                    <span>{sec.label}</span>
+                  </button>
+                );
+              })}
+              {/* Right spacer so the last section title can also position horizontally at the exact center of the navbar */}
+              <div
+                className="shrink-0 w-[36vw] sm:w-[40vw] lg:w-[42%]"
+                aria-hidden="true"
+              />
+            </div>
+          </nav>
+        )}
       </header>
 
-      <div className="flex flex-1 overflow-hidden relative">
-        <aside className={`bg-white border-gray-200 shrink-0 flex flex-col transition-all duration-300 ease-in-out overflow-hidden z-40 relative shadow-[4px_0_15px_-3px_rgba(0,0,0,0.05)] border-r ${isSidebarOpen ? 'w-56' : 'w-[72px]'}`}>
-          <div className="w-full px-3 py-6 flex flex-col h-full overflow-y-auto hide-scrollbar overflow-x-hidden">
-            <nav className="space-y-1.5 flex-1 text-[13px] font-bold">
-              <button onClick={() => { setActiveTab('accueil'); setIsExploring(false); }} className={`w-full flex items-center ${isSidebarOpen ? 'px-4 space-x-3' : 'justify-center'} py-3 rounded-xl transition-all cursor-pointer ${activeTab === 'accueil' ? 'bg-sky-600 text-white shadow-lg' : 'text-gray-400 hover:bg-sky-50 hover:text-sky-600'}`}>
-                <Home className="w-5 h-5 shrink-0" />
-                {isSidebarOpen && <span>Accueil</span>}
-              </button>
+      {/* Compensating Spacer for Fixed Header (so content is never covered at the top) */}
+      <div
+        aria-hidden="true"
+        className={
+          !isUnlocked || activeTab === 'accueil'
+            ? 'h-[84px] shrink-0 no-print'
+            : 'hidden md:block md:h-[84px] shrink-0 no-print'
+        }
+      />
 
-              <button onClick={() => { setActiveTab('projects'); setIsExploring(false); }} className={`w-full flex items-center ${isSidebarOpen ? 'px-4 space-x-3' : 'justify-center'} py-3 rounded-xl transition-all cursor-pointer ${activeTab === 'projects' ? 'bg-sky-600 text-white shadow-lg' : 'text-gray-400 hover:bg-sky-50 hover:text-sky-600'}`}>
-                <Folder className="w-5 h-5 shrink-0" />
-                {isSidebarOpen && <span>Portefeuilles</span>}
-              </button>
-              
-              {isExploring && (
-                <>
-                  {isSidebarOpen && activeDossier && (
-                    <div className="my-2 p-2 bg-sky-50 border border-sky-100 rounded-lg flex items-center shadow-inner animate-in fade-in">
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 mr-2 animate-pulse shrink-0"></div>
-                      <span className="text-[10px] font-black text-sky-800 truncate" title={activeDossier.name}>{activeDossier.name}</span>
-                    </div>
-                  )}
-                  <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center ${isSidebarOpen ? 'px-4 space-x-3' : 'justify-center'} py-3 rounded-xl transition-all cursor-pointer ${activeTab === 'dashboard' ? 'bg-[#3F9384] text-white shadow-lg shadow-teal-100' : 'text-gray-400 hover:bg-teal-50 hover:text-teal-600'}`}>
-                    <LayoutDashboard className="w-5 h-5 shrink-0" />
-                    {isSidebarOpen && <span>Dashboard</span>}
-                  </button>
-                  <button onClick={() => setActiveTab('processus')} className={`w-full flex items-center ${isSidebarOpen ? 'px-4 space-x-3' : 'justify-center'} py-3 rounded-xl transition-all cursor-pointer ${activeTab === 'processus' ? 'bg-[#3F9384] text-white shadow-lg shadow-teal-100' : 'text-gray-400 hover:bg-teal-50 hover:text-teal-600'}`}>
-                    <Activity className="w-5 h-5 shrink-0" />
-                    {isSidebarOpen && <span>Saisie Opérations</span>}
-                  </button>
-                  <button onClick={() => setActiveTab('matrice')} className={`w-full flex items-center ${isSidebarOpen ? 'px-4 space-x-3' : 'justify-center'} py-3 rounded-xl transition-all cursor-pointer ${activeTab === 'matrice' ? 'bg-[#3F9384] text-white shadow-lg shadow-teal-100' : 'text-gray-400 hover:bg-teal-50 hover:text-teal-600'}`}>
-                    <Grid className="w-5 h-5 shrink-0" />
-                    {isSidebarOpen && <span>Matrice des Risques</span>}
-                  </button>
-                  <button onClick={() => setActiveTab('gantt')} className={`w-full flex items-center ${isSidebarOpen ? 'px-4 space-x-3' : 'justify-center'} py-3 rounded-xl transition-all cursor-pointer ${activeTab === 'gantt' ? 'bg-[#3F9384] text-white shadow-lg shadow-teal-100' : 'text-gray-400 hover:bg-teal-50 hover:text-teal-600'}`}>
-                    <CalendarDays className="w-5 h-5 shrink-0" />
-                    {isSidebarOpen && <span>Chronogramme</span>}
-                  </button>
-                  <button onClick={() => setActiveTab('kanban')} className={`w-full flex items-center ${isSidebarOpen ? 'px-4 space-x-3' : 'justify-center'} py-3 rounded-xl transition-all cursor-pointer ${activeTab === 'kanban' ? 'bg-[#3F9384] text-white shadow-lg shadow-teal-100' : 'text-gray-400 hover:bg-teal-50 hover:text-teal-600'}`}>
-                    <Grid className="w-5 h-5 shrink-0" />
-                    {isSidebarOpen && <span>Tableau Kanban</span>}
-                  </button>
-                </>
-              )}
-            </nav>
-            {isSidebarOpen ? (
-              <div className="mt-auto pt-4 border-t border-gray-100 text-[10px] text-gray-500 flex flex-col items-center shrink-0">
-                <div className="bg-sky-50/50 p-3 rounded-lg border border-sky-100 w-full text-center shadow-sm">
-                  <div className="flex justify-center mb-1.5"><Shield className="w-4 h-4 text-sky-500" /></div>
-                  <p className="font-bold text-gray-800 text-[11px] mb-0.5">Koffié Fabien Michael</p>
-                  <p className="text-[8px] text-sky-600 font-bold uppercase tracking-wider mb-2">Propriété Intellectuelle</p>
-                  <div className="space-y-1.5 text-gray-700 mt-2">
-                    <p className="flex justify-center items-center font-medium tracking-wide"> +225 07 48 08 27 39</p>
-                    <p className="flex justify-center items-center break-all font-medium"> fabien.frikupgeneration@gmail.com</p>
-                  </div>
-                  <p className="text-[8.5px] text-gray-500 mt-2.5 border-t border-sky-200/60 pt-2 leading-tight">
-                    Toute reproduction interdite.<br/>Pour toute collaboration ou réutilisation, veuillez me contacter.
-                  </p>
+      {/* MAIN CONTENT AREA */}
+      <main
+        className={`flex-1 max-w-7xl w-full mx-auto px-2 sm:px-6 ${
+          !isUnlocked || activeTab === 'accueil' ? 'pt-3 md:pt-5' : 'pt-14 md:pt-5'
+        } pb-4`}
+      >
+        {(!isUnlocked || activeTab === 'accueil') && (
+          <LandingPage
+            isDark={theme === 'dark'}
+            language={language}
+            lastJsonFileName={lastJsonFileName}
+            onOpenSlidebar={() => {
+              if (!authUser) {
+                handleGoogleSignIn();
+                return;
+              }
+              if (!isPinVerified || isDeviceLocked) {
+                setSuperAdminAuthModalStep(
+                  isDeviceLocked ? 'device_locked' : 'pin_and_biometric'
+                );
+                setIsSuperAdminAuthModalOpen(true);
+                return;
+              }
+              if (isSuperAdminEmail(authUser.email)) {
+                navigateTo('super_admin');
+              } else {
+                setIsSlidebarOpen(true);
+              }
+            }}
+            onNavigateTab={navigateTo}
+          />
+        )}
+
+        {isRegularUserUnlocked && activeTab === 'profil' && (
+          <UserProfileView
+            userProfile={userProfile}
+            setUserProfile={setUserProfile}
+            currency={currency}
+            setCurrency={setCurrency}
+            language={language}
+            setLanguage={setLanguage}
+            onNavigateTab={navigateTo}
+            currentUser={authUser}
+            onShowToast={showToast}
+          />
+        )}
+
+        {isRegularUserUnlocked &&
+          (activeTab === 'projects' || activeTab === 'super_admin') && (
+          <DossiersAndProjectsView
+            dossiers={dossiers}
+            activeDossier={activeDossier}
+            setActiveDossierId={setActiveDossierId}
+            onCreateDossier={createDossierDirect}
+            onUpdateDossier={handleUpdateDossier}
+            onDeleteDossier={handleDeleteDossier}
+            onAddAxe={handleAddAxe}
+            onUpdateAxeName={handleUpdateAxeName}
+            onDeleteAxe={handleDeleteAxe}
+            onAddProject={handleAddProject}
+            onUpdateProjectName={handleUpdateProjectName}
+            onDeleteProject={handleDeleteProject}
+            currency={currency}
+            language={language}
+            onNavigateTab={navigateTo}
+          />
+        )}
+
+        <Suspense
+          fallback={
+            <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-600 dark:text-slate-300 animate-pulse">
+              <div className="w-7 h-7 border-3 border-orange-600 dark:border-orange-400 border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs font-extrabold uppercase tracking-wider">
+                {language === 'EN'
+                  ? 'Loading FAAB RISK module...'
+                  : 'Chargement fluide du module FAAB RISK...'}
+              </span>
+            </div>
+          }
+        >
+          {isRegularUserUnlocked && activeTab === 'risk_dashboard' && (
+            <RiskDashboardView
+              dossier={activeDossier}
+              language={language}
+              currency={currency}
+              filterAxeId={filterAxeId}
+              setFilterAxeId={setFilterAxeId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+              onAddTaskInPhase={handleAddTaskInPhase}
+              onUpdateTask={handleUpdateTask}
+              onDeleteTask={handleDeleteTask}
+              onNavigateTab={navigateTo}
+            />
+          )}
+
+          {isRegularUserUnlocked && activeTab === 'risk_operations' && (
+            <RiskOperationsView
+              dossier={activeDossier}
+              language={language}
+              currency={currency}
+              filterAxeId={filterAxeId}
+              setFilterAxeId={setFilterAxeId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+              onAddTaskInPhase={handleAddTaskInPhase}
+              onUpdateTask={handleUpdateTask}
+              onDeleteTask={handleDeleteTask}
+            />
+          )}
+
+          {isRegularUserUnlocked && activeTab === 'gantt' && (
+            <GanttAndTreeView
+              dossier={activeDossier}
+              currency={currency}
+              language={language}
+              filterAxeId={filterAxeId}
+              setFilterAxeId={setFilterAxeId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+              onUpdateTask={handleUpdateTask}
+            />
+          )}
+
+          {isRegularUserUnlocked &&
+            (activeTab === 'planification' ||
+              activeTab === 'raci') && (
+            <OperationalMatrices
+              mode={activeTab as 'planification' | 'raci'}
+              dossier={activeDossier}
+              currency={currency}
+              language={language}
+              filterAxeId={filterAxeId}
+              setFilterAxeId={setFilterAxeId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+              onAddAxe={handleAddAxe}
+              onUpdateAxeName={handleUpdateAxeName}
+              onDeleteAxe={handleDeleteAxe}
+              onAddProject={handleAddProject}
+              onUpdateProjectName={handleUpdateProjectName}
+              onDeleteProject={handleDeleteProject}
+              onAddTaskInPhase={handleAddTaskInPhase}
+              onUpdateTask={handleUpdateTask}
+              onDeleteTask={handleDeleteTask}
+            />
+          )}
+
+          {isRegularUserUnlocked && activeTab === 'categorie' && (
+            <CategoriesActorsView
+              dossier={activeDossier}
+              dossiers={dossiers}
+              onSelectDossier={setActiveDossierId}
+              userProfile={userProfile}
+              onUpdateUserProfile={setUserProfile}
+              language={language}
+              filterAxeId={filterAxeId}
+              setFilterAxeId={setFilterAxeId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+              onUpdateCategorizedActors={handleUpdateCategorizedActors}
+              onRenameActorInRaci={(oldName, newName) => {
+                updateActiveDossier(d =>
+                  renameActorInDossierTasks(d, oldName, newName)
+                );
+              }}
+              onApplyProfileToDoc={(docType, fields) => {
+                Object.entries(fields).forEach(([k, v]) => {
+                  if (v !== undefined) {
+                    handleUpdateDocField(
+                      docType,
+                      k as keyof CustomDocFields,
+                      String(v)
+                    );
+                  }
+                });
+              }}
+              onNavigateToDocGen={() => {
+                navigateTo('docgen');
+              }}
+            />
+          )}
+
+          {isRegularUserUnlocked && activeTab === 'pert' && renderPertView()}
+
+          {isRegularUserUnlocked && activeTab === 'kanban' && renderKanbanView()}
+
+          {isRegularUserUnlocked && activeTab === 'fiche' && (
+            <FicheTechniquePages
+              dossier={activeDossier}
+              userProfile={userProfile}
+              currency={currency}
+              language={language}
+            />
+          )}
+
+          {isSuperAdminUnlocked &&
+            activeTab !== 'accueil' &&
+            authUser && (
+              <SuperAdminDashboardView
+                currentUser={authUser}
+                language={language}
+                onLockDevice={() => {
+                  setIsDeviceLocked(true);
+                  setSuperAdminAuthModalStep('device_locked');
+                  setIsSuperAdminAuthModalOpen(true);
+                }}
+                onSignOut={handleSignOut}
+                onShowToast={showToast}
+              />
+            )}
+
+          {isRegularUserUnlocked && activeTab === 'docgen' && (
+            <DocumentGeneratorView
+              dossier={activeDossier}
+              userProfile={userProfile}
+              currency={currency}
+              language={language}
+              customDocsData={activeProgramCustomDocsData}
+              onUpdateDocField={handleUpdateDocField}
+              onResetDocDefaults={handleResetDocDefaults}
+              filterAxeId={filterAxeId}
+              setFilterAxeId={setFilterAxeId}
+              filterProjectId={filterProjectId}
+              setFilterProjectId={setFilterProjectId}
+            />
+          )}
+        </Suspense>
+      </main>
+
+      {/* Modale Fiche Acteur Interne ouverte depuis l'onglet Catégorie */}
+      {isRegularUserUnlocked && isCategoryProfileModalOpen && (
+        <Suspense fallback={null}>
+          <InternalActorProfileModal
+            isOpen={isCategoryProfileModalOpen}
+            onClose={() => setIsCategoryProfileModalOpen(false)}
+            initialActorName={selectedCategoryActorName}
+            allActorsList={activeRaciContext.internalOnlyActors}
+            raciContextInfo={{
+              rList: activeRaciContext.rList,
+              aList: activeRaciContext.aList,
+              cList: activeRaciContext.cList,
+              iList: activeRaciContext.iList
+            }}
+            dossier={activeDossier}
+            userProfile={userProfile}
+            language={language}
+            currency={currency}
+            executingOrgName={
+              activeDossier.institution ||
+              userProfile.institution ||
+              'Organisation Pilote du Programme'
+            }
+            executingDepartment="Direction du Pilotage Stratégique & PMO"
+            onApplyToDoc={(docType, fields) => {
+              Object.entries(fields).forEach(([k, v]) => {
+                if (v !== undefined) {
+                  handleUpdateDocField(docType, k as keyof CustomDocFields, v);
+                }
+              });
+            }}
+            onSelectDocType={docType => {
+              navigateTo('docgen');
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Modale Globale Scanner QR Code & Code-Barres (Contrôle d'Accès Interne & vCard) */}
+      {isRegularUserUnlocked && isGlobalScannerOpen && (
+        <Suspense fallback={null}>
+          <QrBarcodeScannerModal
+            isOpen={isGlobalScannerOpen}
+            onClose={() => setIsGlobalScannerOpen(false)}
+            dossier={activeDossier}
+            userProfile={userProfile}
+            language={language}
+          />
+        </Suspense>
+      )}
+
+      {/* Modale de Sécurité Post-Google Sign-In : Code PIN (0000 par défaut, saisie clavier appareil), Touch ID / Face ID & Réinitialisation Gmail */}
+      <SuperAdminAuthModal
+        isOpen={isSuperAdminAuthModalOpen || isDeviceLocked}
+        initialStep={
+          isDeviceLocked ? 'device_locked' : superAdminAuthModalStep
+        }
+        currentUser={authUser}
+        language={language}
+        onClose={() => {
+          if (!isDeviceLocked && isPinVerified) {
+            setIsSuperAdminAuthModalOpen(false);
+          }
+        }}
+        onAuthenticatedSuccess={(verifiedUser, assignedRole) => {
+          setAuthUser(verifiedUser);
+          void syncFirebaseUserToRegistry(verifiedUser);
+          setIsPinVerified(true);
+          setSessionPinVerifiedForUser(verifiedUser.uid, true);
+          setIsDeviceLocked(false);
+          setIsSuperAdminAuthModalOpen(false);
+
+          if (
+            assignedRole === 'super_admin' ||
+            isSuperAdminEmail(verifiedUser.email)
+          ) {
+            setActiveTab('super_admin');
+            showToast(
+              language === 'EN'
+                ? 'Welcome Super Administrator! Exclusive Console unlocked.'
+                : 'Bienvenue Super Administrateur ! Console exclusive déverrouillée.'
+            );
+          } else {
+            setActiveTab(prev =>
+              prev === 'accueil' || prev === 'super_admin'
+                ? 'projects'
+                : prev
+            );
+            showToast(
+              language === 'EN'
+                ? `Welcome! User workspace unlocked (${verifiedUser.email})`
+                : `Bienvenue ! Espace Utilisateur déverrouillé (${verifiedUser.email})`
+            );
+          }
+        }}
+        onSignOut={handleSignOut}
+      />
+
+      {/* Modale de Diagnostic Domaine Firebase non autorisé & Popups bloquées */}
+      {isAuthHelpModalOpen && (
+        <FirebaseAuthHelpModal
+          isOpen={isAuthHelpModalOpen}
+          onClose={() => setIsAuthHelpModalOpen(false)}
+          onRetryGooglePopup={() => {
+            setIsAuthHelpModalOpen(false);
+            handleDirectGooglePopupRetry();
+          }}
+          errorCode={authErrorCode}
+          errorMessage={authErrorMessage}
+          language={language}
+        />
+      )}
+
+      {/* INSTITUTIONAL FOOTER — ONLY ON HOME PAGE (accueil) OR WHEN UNCONNECTED / LOCKED */}
+      {(!isUnlocked || activeTab === 'accueil') && (
+        <footer className="relative z-10 bg-orange-900 text-white border-t-4 border-orange-400 mt-12">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="shrink-0 flex items-center justify-center">
+                <AppLogo className="w-28 h-28 sm:w-36 sm:h-36 md:w-40 md:h-40 drop-shadow-lg" />
+              </div>
+              <div>
+                <div className="text-sm font-black uppercase tracking-wider text-white">
+                  {language === 'EN'
+                    ? 'FAAB RISK — STRATEGIC & OPERATIONAL STEERING'
+                    : 'FAAB RISK — PILOTAGE STRATÉGIQUE & OPÉRATIONNEL'}
+                </div>
+                <div className="text-xs text-[#90D5FF]">
+                  {language === 'EN'
+                    ? 'Creator & Lead Architect: KOFFIE FABIEN MICHAEL'
+                    : 'Créateur & Architecte Principal : KOFFIE FABIEN MICHAEL'}
+                </div>
+                <div className="text-[11px] text-sky-200 mt-0.5">
+                  {language === 'EN'
+                    ? 'Local IndexedDB Persistence • JSON Backup • Pure White A4 PDF Exports'
+                    : 'Persistance Locale IndexedDB • Sauvegarde JSON • Exports PDF A4 Fond Blanc Pur'}
                 </div>
               </div>
-            ) : (
-              <div className="mt-auto pt-4 border-t border-gray-100 text-[10px] text-gray-400 text-center font-bold cursor-pointer flex flex-col items-center" title="Propriété de Koffié Fabien Michael&#10; +225 07 48 08 27 39&#10; fabien.frikupgeneration@gmail.com&#10;Pour toute collaboration, veuillez me contacter.">
-                <Shield className="w-4 h-4 text-sky-400 mb-1" />
-                <span className="text-gray-600">KFM</span>
-              </div>
-            )}
-          </div>
-        </aside>
+            </div>
 
-        <main className="flex-1 p-6 overflow-y-auto bg-sky-50/20 z-10 relative">
-          <ErrorBoundary>
-            {activeTab === 'accueil' && renderAccueil()}
-            {activeTab === 'projects' && renderProjectManager()}
-            {activeTab === 'dashboard' && renderDashboard()}
-            {activeTab === 'processus' && renderProcessus()}
-            {activeTab === 'matrice' && renderMatriceRisques()}
-            {activeTab === 'gantt' && renderGantt()}
-            {activeTab === 'kanban' && renderKanban()}
-          </ErrorBoundary>
-        </main>
-      </div>
+            <div className="flex flex-col sm:items-end items-center gap-2.5 text-center sm:text-right text-xs text-sky-200">
+              {/* Language & Currency Selectors in Footer of Homepage */}
+              <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+                <div className="flex items-center gap-2 bg-sky-950/80 border border-[#90D5FF]/50 rounded-xl px-3 py-1.5 shadow-sm">
+                  <Globe className="w-4 h-4 text-[#90D5FF] shrink-0" />
+                  <label
+                    htmlFor="footer-language-select"
+                    className="text-[11px] font-bold uppercase tracking-wider text-[#90D5FF]"
+                  >
+                    {language === 'EN' ? 'Language :' : 'Langue :'}
+                  </label>
+                  <select
+                    id="footer-language-select"
+                    value={language}
+                    onChange={e => setLanguage(e.target.value as LanguageCode)}
+                    className="bg-[#0c4a6e] text-white text-xs font-extrabold px-2 py-0.5 rounded-lg border border-[#90D5FF]/60 focus:outline-none focus:ring-2 focus:ring-[#90D5FF] cursor-pointer"
+                  >
+                    <option value="FR">Français (FR)</option>
+                    <option value="EN">English (EN)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 bg-sky-950/80 border border-[#90D5FF]/50 rounded-xl px-3 py-1.5 shadow-sm">
+                  <DollarSign className="w-4 h-4 text-[#90D5FF] shrink-0" />
+                  <label
+                    htmlFor="footer-currency-select"
+                    className="text-[11px] font-bold uppercase tracking-wider text-[#90D5FF]"
+                  >
+                    {language === 'EN' ? 'Currency :' : 'Devise :'}
+                  </label>
+                  <select
+                    id="footer-currency-select"
+                    value={currency}
+                    onChange={e => setCurrency(e.target.value as CurrencyCode)}
+                    className="bg-[#0c4a6e] text-white text-xs font-extrabold px-2 py-0.5 rounded-lg border border-[#90D5FF]/60 focus:outline-none focus:ring-2 focus:ring-[#90D5FF] cursor-pointer"
+                  >
+                    <option value="FCFA">FCFA (XOF)</option>
+                    <option value="EUR">Euro (€ - EUR)</option>
+                    <option value="USD">Dollar ($ - USD)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <div className="font-bold text-white">
+                  © {new Date().getFullYear()} FAAB RISK •{' '}
+                  {language === 'EN' ? 'All rights reserved' : 'Tous droits réservés'}
+                </div>
+                <div className="text-[11px] text-[#90D5FF]">
+                  {language === 'EN'
+                    ? 'Universal & Multi-Project Web Application'
+                    : 'Application Web Universelle & Multi-Projets'}
+                </div>
+              </div>
+            </div>
+          </div>
+        </footer>
+      )}
     </div>
   );
 }
 
-export default function App() {
-  return <MainApp />;
-}
+export default App;

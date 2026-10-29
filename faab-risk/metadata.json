@@ -1,0 +1,8 @@
+{
+  "name": "FAAB PLAN — Pilotage Stratégique, Planification & Suivi des Tâches",
+  "description": "Plateforme universelle de planification stratégique, ordonnancement PERT/CPM, diagramme de Gantt, suivi opérationnel des tâches, Kanban et générateur de documents aux normes internationales.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

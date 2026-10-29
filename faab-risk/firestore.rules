@@ -1,0 +1,333 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model — FAAB PLAN (F-PLLAN) (`faab-projet`)
+// ===============================================================
+//
+// Core Security Architecture:
+//   1. Auth & Security Metadata ONLY (Zero Programme/Project Content in Firestore):
+//      Cloud Firestore is strictly restricted to storing Firebase Authentication
+//      registration metadata and PIN/WebAuthn security configurations.
+//      All programme, project, dossier, and workspace contents are strictly
+//      prohibited in Firestore (/user_workspaces/{document=**} is explicitly denied)
+//      and remain isolated in each user's local storage / local IndexedDB.
+//
+//   2. Strict Dissociation & User Isolation:
+//      - Super Administrator: Exclusively 'fabien.frikupgeneration@gmail.com' (verified email).
+//        Has exclusive access to /super_admin_config/{docId} and listing/deleting
+//        /platform_users/{userId}. Has ZERO access to /user_security_config/{userId}
+//        or any user workspace data.
+//      - Standard Users (Regular Users): All other authenticated emails.
+//        Can ONLY read/write their own /platform_users/{userId} (with role == 'user')
+//        and their own /user_security_config/{userId}. Cannot read or list any other
+//        user's documents and have ZERO access to /super_admin_config.
+//
+// 1. Collection: /platform_users/{userId}
+//    Document ID: {userId} (Firebase Authentication UID)
+//    Fields (Strict whitelist — no programme or content fields allowed):
+//      - uid: string (required, immutable, must equal userId and request.auth.uid, 1..128 chars)
+//      - identifier: string (optional if email provided, 1..320 chars) - User email or identifier
+//      - email: string (optional if identifier provided, 1..320 chars) - User email
+//      - displayName: string (optional, 0..200 chars) - User full display name
+//      - photoURL: string (optional, max 2048 chars, valid URL or data URI) - Avatar URL
+//      - providers: list of strings (required, 1..10 items) - Auth providers (e.g., ['google.com'])
+//      - createdAt: string (ISO 8601) or timestamp (required, immutable on update) - Registration date
+//      - lastLoginAt: string (ISO 8601) or timestamp (required) - Last login timestamp
+//      - loginCount: int (optional, 1..1000000000) - Cumulative sign-in counter
+//      - role: string (required, enum: 'super_admin' | 'user') - Strictly bound to identity
+//      - updatedAt: string (ISO 8601) or timestamp (optional) - Record sync timestamp
+//
+// 2. Collection: /super_admin_config/{docId}
+//    Document ID: {docId} (e.g., 'main_profile')
+//    Fields (Strict whitelist):
+//      - nom: string (optional, 1..120 chars)
+//      - prenoms: string (optional, 1..160 chars)
+//      - email: string (optional, 3..320 chars, must equal Super Admin email if present)
+//      - contact: string (optional, 1..80 chars)
+//      - fonction: string (optional, 1..200 chars)
+//      - organisation: string (optional, 1..200 chars)
+//      - pinHash: string (optional, 4..256 chars)
+//      - biometricCredentialId: string (optional, 0..1024 chars)
+//      - updatedAt: string (ISO 8601) or timestamp (optional)
+//
+// 3. Collection: /user_security_config/{userId}
+//    Document ID: {userId} (Firebase Authentication UID of a Regular User)
+//    Fields (Strict whitelist):
+//      - uid: string (required, immutable, must equal userId and request.auth.uid, 1..128 chars)
+//      - email: string (optional, 3..320 chars)
+//      - pinHash: string (optional, 4..256 chars)
+//      - biometricCredentialId: string (optional, 0..1024 chars)
+//      - updatedAt: string (ISO 8601) or timestamp (required)
+//
+// 4. Collection: /user_workspaces/{document=**}
+//    Explicitly DENIED (`allow read, write: if false;`). Zero programme/dossier data in Firestore.
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // 1. Strict Role Separation & Identity Helper Functions
+    // ===============================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() &&
+             request.auth.token.email == 'fabien.frikupgeneration@gmail.com' &&
+             request.auth.token.email_verified == true;
+    }
+
+    function isRegularUser() {
+      return isSignedIn() &&
+             request.auth.token.email != 'fabien.frikupgeneration@gmail.com';
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function uidUnchanged(userId) {
+      return ('uid' in request.resource.data) &&
+             request.resource.data.uid is string &&
+             request.resource.data.uid == userId &&
+             request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return ('uid' in request.resource.data) &&
+             ('uid' in resource.data) &&
+             request.resource.data.uid == resource.data.uid;
+    }
+
+    // ===============================================================
+    // 2. Common Schema & Type Validation Helper Functions
+    // ===============================================================
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidDateOrTimestamp(val) {
+      return (val is timestamp) ||
+             (val is string &&
+              val.size() >= 10 &&
+              val.size() <= 64 &&
+              val.matches("^\\d{4}-\\d{2}-\\d{2}.*"));
+    }
+
+    function isValidOptionalDateOrTimestamp(field) {
+      return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
+             isValidDateOrTimestamp(request.resource.data[field]);
+    }
+
+    function isValidOptionalUrl(field, maxLen) {
+      return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() <= maxLen &&
+              (request.resource.data[field].size() == 0 ||
+               request.resource.data[field].matches("^https://.*") ||
+               request.resource.data[field].matches("^http://.*") ||
+               request.resource.data[field].matches("^data:image/.*")));
+    }
+
+    function isValidProvidersList(providers) {
+      return providers is list &&
+             providers.size() >= 1 &&
+             providers.size() <= 10 &&
+             providers[0] is string &&
+             providers[0].size() >= 1 &&
+             providers[0].size() <= 100;
+    }
+
+    // ===============================================================
+    // 3. Domain Validators (Applied on BOTH create and update)
+    // ===============================================================
+
+    // Strict role binding:
+    // - Super Admin ('fabien.frikupgeneration@gmail.com') MUST have role == 'super_admin'
+    // - Regular Users (all other emails) MUST have role == 'user'
+    function isValidPlatformUserRole(data) {
+      return ('role' in data) &&
+             data.role is string &&
+             ((isSuperAdmin() && data.role == 'super_admin') ||
+              (isRegularUser() && data.role == 'user'));
+    }
+
+    function isValidPlatformUser(data, userId) {
+      let allowedFields = [
+        'uid',
+        'identifier',
+        'email',
+        'displayName',
+        'photoURL',
+        'providers',
+        'createdAt',
+        'lastLoginAt',
+        'loginCount',
+        'role',
+        'updatedAt'
+      ];
+      let hasIdentityField = (
+        ('identifier' in data && data.identifier is string && data.identifier.size() >= 1 && data.identifier.size() <= 320) ||
+        ('email' in data && data.email is string && data.email.size() >= 1 && data.email.size() <= 320)
+      );
+      let validIdentifier = !('identifier' in data) || (data.identifier is string && data.identifier.size() >= 1 && data.identifier.size() <= 320);
+      let validEmail = !('email' in data) || data.email == null || (data.email is string && data.email.size() >= 1 && data.email.size() <= 320);
+      let validLoginCount = !('loginCount' in data) || (data.loginCount is int && data.loginCount >= 1 && data.loginCount <= 1000000000);
+
+      return hasOnlyAllowedFields(allowedFields) &&
+             hasRequiredFields(['uid', 'providers', 'createdAt', 'lastLoginAt', 'role']) &&
+             data.uid is string &&
+             data.uid == userId &&
+             data.uid.size() >= 1 &&
+             data.uid.size() <= 128 &&
+             hasIdentityField &&
+             validIdentifier &&
+             validEmail &&
+             isValidOptionalString('displayName', 0, 200) &&
+             isValidOptionalUrl('photoURL', 2048) &&
+             isValidProvidersList(data.providers) &&
+             isValidDateOrTimestamp(data.createdAt) &&
+             isValidDateOrTimestamp(data.lastLoginAt) &&
+             validLoginCount &&
+             isValidPlatformUserRole(data) &&
+             isValidOptionalDateOrTimestamp('updatedAt');
+    }
+
+    function isValidPlatformUserUpdate(data) {
+      return uidNotModified() &&
+             data.createdAt == resource.data.createdAt &&
+             isValidPlatformUserRole(data) &&
+             (!('role' in resource.data) || data.role == resource.data.role);
+    }
+
+    function isValidSuperAdminConfig(data) {
+      let allowedFields = [
+        'nom',
+        'prenoms',
+        'email',
+        'contact',
+        'fonction',
+        'organisation',
+        'pinHash',
+        'biometricCredentialId',
+        'updatedAt'
+      ];
+      let validAdminEmail = !('email' in data) ||
+                            data.email == null ||
+                            (data.email is string && data.email == 'fabien.frikupgeneration@gmail.com');
+      return hasOnlyAllowedFields(allowedFields) &&
+             data.keys().size() >= 1 &&
+             isValidOptionalString('nom', 1, 120) &&
+             isValidOptionalString('prenoms', 1, 160) &&
+             isValidOptionalString('email', 3, 320) &&
+             validAdminEmail &&
+             isValidOptionalString('contact', 1, 80) &&
+             isValidOptionalString('fonction', 1, 200) &&
+             isValidOptionalString('organisation', 1, 200) &&
+             isValidOptionalString('pinHash', 4, 256) &&
+             isValidOptionalString('biometricCredentialId', 0, 1024) &&
+             isValidOptionalDateOrTimestamp('updatedAt');
+    }
+
+    function isValidUserSecurityConfig(data, userId) {
+      let allowedFields = [
+        'uid',
+        'email',
+        'pinHash',
+        'biometricCredentialId',
+        'updatedAt'
+      ];
+      return hasOnlyAllowedFields(allowedFields) &&
+             hasRequiredFields(['uid', 'updatedAt']) &&
+             data.uid is string &&
+             data.uid == userId &&
+             data.uid == request.auth.uid &&
+             data.uid.size() >= 1 &&
+             data.uid.size() <= 128 &&
+             isValidOptionalString('email', 3, 320) &&
+             isValidOptionalString('pinHash', 4, 256) &&
+             isValidOptionalString('biometricCredentialId', 0, 1024) &&
+             isValidDateOrTimestamp(data.updatedAt);
+    }
+
+    // ===============================================================
+    // 4. Collection Security Rules
+    // ===============================================================
+
+    // 1. Registered Firebase Authentication Users Registry (/platform_users/{userId})
+    //    - Contains ONLY authentication metadata (strictly whitelisted fields).
+    //    - get: Document owner OR Super Admin. Regular users can NEVER read another user's doc.
+    //    - list: Strictly ONLY Super Admin (regular users cannot list registered users).
+    //    - create: Document owner with strict role binding ('super_admin' for Super Admin, 'user' for Regular User).
+    //    - update: Document owner with immutable uid, createdAt, and role.
+    //    - delete: Strictly ONLY Super Admin.
+    match /platform_users/{userId} {
+      allow get: if isSuperAdmin() || isOwner(userId);
+      allow list: if isSuperAdmin();
+      allow create: if isOwner(userId) &&
+                       uidUnchanged(userId) &&
+                       isValidPlatformUser(request.resource.data, userId);
+      allow update: if isOwner(userId) &&
+                       isValidPlatformUser(request.resource.data, userId) &&
+                       isValidPlatformUserUpdate(request.resource.data);
+      allow delete: if isSuperAdmin();
+    }
+
+    // 2. Super Administrator Configuration, Profile, PIN Hash & WebAuthn Biometrics
+    //    - Strictly accessible ONLY by the single Super Admin ('fabien.frikupgeneration@gmail.com').
+    //    - Regular users have zero access.
+    match /super_admin_config/{docId} {
+      allow get, list: if isSuperAdmin();
+      allow create, update: if isSuperAdmin() &&
+                               isValidSuperAdminConfig(request.resource.data);
+      allow delete: if isSuperAdmin();
+    }
+
+    // 3. Standard User Security Configuration (PIN Hash & Biometric Credential ID)
+    //    - Strictly accessible ONLY by the owning Regular User (isRegularUser() && isOwner(userId)).
+    //    - List is completely disabled. Neither other users NOR the Super Admin have any access.
+    match /user_security_config/{userId} {
+      allow get: if isRegularUser() && isOwner(userId);
+      allow list: if false;
+      allow create: if isRegularUser() &&
+                       isOwner(userId) &&
+                       uidUnchanged(userId) &&
+                       isValidUserSecurityConfig(request.resource.data, userId);
+      allow update: if isRegularUser() &&
+                       isOwner(userId) &&
+                       uidNotModified() &&
+                       isValidUserSecurityConfig(request.resource.data, userId);
+      allow delete: if isRegularUser() && isOwner(userId);
+    }
+
+    // 4. Explicit Prohibition of Programme, Dossier & Workspace Content in Firestore
+    //    - Firestore MUST ONLY store Authentication & Security metadata.
+    //    - All user workspaces, programmes, and dossiers are strictly blocked in Firestore.
+    match /user_workspaces/{document=**} {
+      allow read, write: if false;
+    }
+
+    // 5. Default Deny All Other Paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

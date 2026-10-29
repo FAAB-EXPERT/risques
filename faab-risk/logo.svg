@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none">
+  <defs>
+    <linearGradient id="rubyGrad" x1="20" y1="20" x2="220" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#dc2626"/>
+      <stop offset="50%" stop-color="#991b1b"/>
+      <stop offset="100%" stop-color="#450a0a"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="40" y1="40" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="50%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#450a0a" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Outer Institutional Shield / Octagon Emblem -->
+  <path d="M120 12 L204 48 L220 132 C220 184 176 216 120 228 C64 216 20 184 20 132 L36 48 Z" fill="url(#rubyGrad)" stroke="url(#goldGrad)" stroke-width="6" filter="url(#dropShadow)"/>
+  
+  <!-- Inner Shield Ring -->
+  <path d="M120 26 L192 57 L205 130 C205 174 167 202 120 213 C73 202 35 174 35 130 L48 57 Z" fill="none" stroke="#fecaca" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>
+
+  <!-- Strategic Compass & Grid Globe Lines -->
+  <circle cx="120" cy="116" r="56" fill="#7f1d1d" fill-opacity="0.5" stroke="url(#goldGrad)" stroke-width="2.5"/>
+  <ellipse cx="120" cy="116" rx="56" ry="24" fill="none" stroke="#fca5a5" stroke-width="1" opacity="0.45"/>
+  <ellipse cx="120" cy="116" rx="24" ry="56" fill="none" stroke="#fca5a5" stroke-width="1" opacity="0.45"/>
+
+  <!-- Rising Performance Bars inside Emblem -->
+  <rect x="86" y="122" width="12" height="26" rx="2" fill="#ffffff" opacity="0.85"/>
+  <rect x="104" y="106" width="12" height="42" rx="2" fill="#ffffff" opacity="0.92"/>
+  <rect x="122" y="90" width="12" height="58" rx="2" fill="url(#goldGrad)"/>
+  <rect x="140" y="74" width="12" height="74" rx="2" fill="#ffffff"/>
+
+  <!-- Upward Strategic Trajectory Arrow -->
+  <path d="M78 118 L110 88 L126 98 L156 66" fill="none" stroke="url(#goldGrad)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M142 64 L158 64 L158 80" fill="none" stroke="url(#goldGrad)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Top Star of Excellence -->
+  <polygon points="120,34 125,45 137,46 128,54 131,66 120,59 109,66 112,54 103,46 115,45" fill="url(#goldGrad)"/>
+
+  <!-- Bottom Banner Ribbon -->
+  <path d="M64 182 Q120 198 176 182 L184 198 Q120 214 56 198 Z" fill="url(#goldGrad)"/>
+  <text x="120" y="197" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="13" font-weight="800" fill="#450a0a" text-anchor="middle" letter-spacing="2">PSD · GAR</text>
+</svg>
