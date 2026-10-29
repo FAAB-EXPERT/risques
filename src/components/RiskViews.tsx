@@ -119,6 +119,22 @@ export function computeCriticiteFromProbAndGrav(
   return 'faible';
 }
 
+export function normalizeFaiblesseValue(
+  val?: string
+): 'ressource humaine' | 'ressource materielle' | 'ressource financiere' {
+  const raw = (val || 'ressource humaine').toLowerCase().trim();
+  if (RISK_DROPDOWNS.faiblesse.includes(raw)) {
+    return raw as 'ressource humaine' | 'ressource materielle' | 'ressource financiere';
+  }
+  if (raw.includes('materiel') || raw.includes('matériel')) {
+    return 'ressource materielle';
+  }
+  if (raw.includes('financ')) {
+    return 'ressource financiere';
+  }
+  return 'ressource humaine';
+}
+
 // Logique Management des Risques : Remplissage automatique de Probabilité, Gravité et Tendance selon l'Évaluation PESTEL (1/5 à 5/5) et le contexte opérationnel
 export function deriveAutoRiskParameters(
   task: Task,
@@ -166,10 +182,10 @@ export function deriveAutoRiskParameters(
   const finalCrit = computeCriticiteFromProbAndGrav(finalProb, finalGrav);
 
   const autoTendance: 'stable' | 'hausse' | 'baisse' =
-    isTreated || pestelScore <= 2
-      ? 'baisse'
-      : isBlocked || pestelScore >= 4
+    pestelScore >= 4 || finalCrit === 'tres critique' || finalCrit === 'critique' || isBlocked
       ? 'hausse'
+      : pestelScore <= 2 || finalCrit === 'faible' || isTreated
+      ? 'baisse'
       : 'stable';
 
   return {
@@ -198,7 +214,14 @@ interface RiskViewCommonProps {
 function useEnrichedRiskTasks(dossier: Dossier, filterAxeId: string, filterProjectId: string) {
   return useMemo(() => {
     const today = getTodayISO();
-    const rows: Array<Task & { projectName: string; axeName: string; axeId: string }> = [];
+    const rows: Array<
+      Task & {
+        projectName: string;
+        axeName: string;
+        axeId: string;
+        hasExplicitFaiblesse: boolean;
+      }
+    > = [];
 
     (dossier.axes || []).forEach(axe => {
       if (filterAxeId !== 'ALL' && axe.id !== filterAxeId) return;
@@ -219,6 +242,9 @@ function useEnrichedRiskTasks(dossier: Dossier, filterAxeId: string, filterProje
               ? 'bloqué'
               : 'nouveau');
           const dateIdentification = t.dateIdentification || t.startDate || today;
+          const dateResolution =
+            t.dateResolution ||
+            (riskStatus === 'traité' ? t.actualEndDate || t.endDate || '' : '');
           const pestelScore = parsePestelScore(t.evaluationPestel);
           const evaluationPestel = `${pestelScore}/5`;
           const autoParams = deriveAutoRiskParameters(t, pestelScore, effStatus);
@@ -227,6 +253,8 @@ function useEnrichedRiskTasks(dossier: Dossier, filterAxeId: string, filterProje
           const criticite = autoParams.criticite;
           const nature = t.categorie || t.nature || 'technologie / technique';
           const consequence = t.consequence || 'qualité';
+          const faiblesse = normalizeFaiblesseValue(t.faiblesse);
+          const hasExplicitFaiblesse = Boolean(t.faiblesse && t.faiblesse.trim() !== '');
           const tendance = autoParams.tendance;
           const activity = t.activity || t.name;
 
@@ -236,6 +264,7 @@ function useEnrichedRiskTasks(dossier: Dossier, filterAxeId: string, filterProje
             taskOrMilestone,
             riskStatus,
             dateIdentification,
+            dateResolution,
             evaluationPestel,
             probabilite,
             gravite,
@@ -243,6 +272,8 @@ function useEnrichedRiskTasks(dossier: Dossier, filterAxeId: string, filterProje
             nature,
             categorie: nature,
             consequence,
+            faiblesse,
+            hasExplicitFaiblesse,
             tendance,
             activity,
             projectName: proj.name,
@@ -264,6 +295,7 @@ function useEnrichedRiskTasks(dossier: Dossier, filterAxeId: string, filterProje
 export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
   dossier,
   language,
+  currency,
   filterAxeId,
   setFilterAxeId,
   filterProjectId,
@@ -281,14 +313,30 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
     const inProgress = riskTasks.filter(t => t.riskStatus === 'en traitement' || t.status === 'En cours').length;
     const todo = Math.max(0, total - completed - blocked - inProgress);
     const critical = riskTasks.filter(
-      t =>
-        (t.criticite === 'tres critique' || t.criticite === 'critique') &&
-        t.riskStatus !== 'traité' &&
-        t.status !== 'Terminé'
+      t => t.criticite === 'tres critique' || t.criticite === 'critique'
     ).length;
 
+    const totalBudgetFCFA = riskTasks.reduce((acc, t) => acc + (Number(t.budget) || 0), 0);
+    const totalDecaissementFCFA = riskTasks.reduce(
+      (acc, t) => acc + (Number(t.montantDecaissement) || 0),
+      0
+    );
+    const decaissementRate =
+      totalBudgetFCFA > 0 ? Math.round((totalDecaissementFCFA / totalBudgetFCFA) * 100) : 0;
+
     const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
-    return { total, completed, blocked, inProgress, todo, critical, rate };
+    return {
+      total,
+      completed,
+      blocked,
+      inProgress,
+      todo,
+      critical,
+      rate,
+      totalBudgetFCFA,
+      totalDecaissementFCFA,
+      decaissementRate
+    };
   }, [riskTasks]);
 
   const avgTreatmentDays = useMemo(() => {
@@ -342,6 +390,7 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
     const tendanceCounts = { stable: 0, hausse: 0, baisse: 0 };
     const graviteCounts = { mineur: 0, majeur: 0, grave: 0, catastrophique: 0 };
     const probabiliteCounts = { improbable: 0, peuProbable: 0, probable: 0, tresProbable: 0 };
+    const faiblesseCounts = { rh: 0, materielle: 0, financiere: 0 };
 
     riskTasks.forEach(t => {
       const crit = (t.criticite || 'modéré').toLowerCase().trim();
@@ -354,11 +403,16 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
         } else {
           criticiteCounts.elevee++;
         }
-      } else if (grav.includes('mineur') || t.riskStatus === 'traité') {
+      } else if (crit.includes('faible')) {
         criticiteCounts.faible++;
       } else {
         criticiteCounts.modere++;
       }
+
+      const fb = normalizeFaiblesseValue(t.faiblesse);
+      if (fb === 'ressource materielle') faiblesseCounts.materielle++;
+      else if (fb === 'ressource financiere') faiblesseCounts.financiere++;
+      else faiblesseCounts.rh++;
 
       const nat = (t.categorie || t.nature || 'technologie').toLowerCase().trim();
       const score = parsePestelScore(t.evaluationPestel);
@@ -432,7 +486,8 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
       tendanceCounts,
       tendancePie,
       graviteBar,
-      probabiliteBar
+      probabiliteBar,
+      faiblesseCounts
     };
   }, [riskTasks, language]);
 
@@ -456,54 +511,66 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
       const isTreated = t.riskStatus === 'traité' || t.status === 'Terminé';
       const isBlocked = t.riskStatus === 'bloqué' || t.status === 'Bloqué';
       const isCritical = crit.includes('critique');
+      const displayLabel =
+        t.libelleRisque && t.libelleRisque.trim() !== ''
+          ? `${t.name || t.activity || 'Activité'} — ${t.libelleRisque.trim()}`
+          : t.name || t.activity || 'Activité';
 
       // Ventilation Scénarii Prospectifs (1 à 4)
-      if (score >= 5 || isBlocked || (isCritical && !isTreated && score >= 4)) {
+      if (score >= 5 || isBlocked || crit === 'tres critique') {
         scen4.push(t);
-      } else if (score === 4 || tend.includes('hausse') || (isCritical && !isTreated)) {
+      } else if (score === 4 || crit === 'critique' || tend.includes('hausse')) {
         scen3.push(t);
-      } else if (score <= 2 || isTreated || tend.includes('baisse')) {
+      } else if (score <= 2 || crit === 'faible' || (isTreated && !isCritical) || tend.includes('baisse')) {
         scen1.push(t);
       } else {
         scen2.push(t);
       }
 
       // Diagnostic SWOT / FFOM
-      if (isTreated || score <= 2 || tend.includes('baisse')) {
+      if (isTreated || score <= 2 || tend.includes('baisse') || crit === 'faible') {
         forces.push({
           id: t.id,
-          label: t.name || t.activity || 'Activité',
-          badge: 'PESTEL OK'
+          label: displayLabel,
+          badge: score <= 2 ? `PESTEL ${score}/5 OK` : isTreated ? 'Traité' : 'Tendance Baisse'
         });
       }
 
-      if (isBlocked || (t.faiblesse && t.faiblesse.trim() !== '' && !isTreated && isCritical)) {
+      if (isBlocked || !isTreated || t.hasExplicitFaiblesse) {
         faiblesses.push({
           id: t.id,
-          label: t.name || t.activity || 'Activité',
-          badge: t.faiblesse || 'Blocage actif'
+          label: displayLabel,
+          badge: t.faiblesse || 'ressource humaine'
         });
       }
 
       if (
+        (t.bailleur && t.bailleur.trim() !== '') ||
+        (Number(t.montantDecaissement) || 0) > 0 ||
         (t.actionPreventive && t.actionPreventive.trim() !== '') ||
         (t.autorite && t.autorite.trim() !== '') ||
         isTreated
       ) {
-        if (opportunites.length < 4) {
-          opportunites.push({
-            id: t.id,
-            label: t.name || t.activity || 'Activité',
-            badge: '1 bailleur(s)'
-          });
-        }
+        const oppBadge =
+          t.bailleur && t.bailleur.trim() !== ''
+            ? t.bailleur.trim()
+            : (Number(t.montantDecaissement) || 0) > 0
+            ? `${Math.round(convertFromFCFA(Number(t.montantDecaissement) || 0, currency)).toLocaleString()} ${currency}`
+            : t.actionPreventive && t.actionPreventive.trim() !== ''
+            ? t.actionPreventive.trim().slice(0, 24)
+            : '1 bailleur(s)';
+        opportunites.push({
+          id: t.id,
+          label: displayLabel,
+          badge: oppBadge
+        });
       }
 
       if (score >= 4 || isCritical || tend.includes('hausse') || t.gravite === 'catastrophique') {
         menaces.push({
           id: t.id,
-          label: t.name || t.activity || 'Activité',
-          badge: 'PESTEL Critique'
+          label: displayLabel,
+          badge: `PESTEL ${score}/5 • ${t.criticite}`
         });
       }
     });
@@ -520,18 +587,16 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
       opportunites,
       menaces
     };
-  }, [riskTasks]);
+  }, [riskTasks, currency]);
 
   const bottlenecks = useMemo(() => {
     return riskTasks.filter(
       t =>
-        t.riskStatus !== 'traité' &&
-        t.status !== 'Terminé' &&
-        (t.riskStatus === 'bloqué' ||
-          t.status === 'Bloqué' ||
-          t.criticite === 'tres critique' ||
-          t.criticite === 'critique' ||
-          t.gravite === 'catastrophique')
+        t.riskStatus === 'bloqué' ||
+        t.status === 'Bloqué' ||
+        t.criticite === 'tres critique' ||
+        t.criticite === 'critique' ||
+        t.gravite === 'catastrophique'
     );
   }, [riskTasks]);
 
@@ -552,26 +617,20 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
       if (filterAxeId !== 'ALL' && axe.id !== filterAxeId) return;
       (axe.projects || []).forEach((proj, pIdx) => {
         if (filterProjectId !== 'ALL' && proj.id !== filterProjectId) return;
-        const ptsk = proj.tasks || [];
+        const ptsk = riskTasks.filter(rt => rt.projectId === proj.id);
         const total = ptsk.length;
-        const today = getTodayISO();
         let Traité = 0;
         let EnCours = 0;
         let Bloqué = 0;
         let Critique = 0;
 
         ptsk.forEach(t => {
-          const eff = computeEffectiveStatus(t, today);
           const rSt = (t.riskStatus || '').toLowerCase().trim();
-          if (rSt === 'traité' || eff === 'Terminé') Traité++;
-          else if (rSt === 'bloqué' || eff === 'Bloqué') Bloqué++;
-          else if (rSt === 'en traitement' || eff === 'En cours') EnCours++;
+          if (rSt === 'traité' || t.status === 'Terminé') Traité++;
+          else if (rSt === 'bloqué' || t.status === 'Bloqué') Bloqué++;
+          else if (rSt === 'en traitement' || t.status === 'En cours') EnCours++;
 
-          if (
-            (t.criticite === 'tres critique' || t.criticite === 'critique') &&
-            rSt !== 'traité' &&
-            eff !== 'Terminé'
-          ) {
+          if (t.criticite === 'tres critique' || t.criticite === 'critique') {
             Critique++;
           }
         });
@@ -593,7 +652,7 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
     });
 
     return list;
-  }, [dossier, filterAxeId, filterProjectId]);
+  }, [dossier, filterAxeId, filterProjectId, riskTasks]);
 
   const getProbValue = (p?: string) => {
     const val = (p || '').toLowerCase().trim();
@@ -1153,11 +1212,17 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
             <p className="text-xs text-slate-300 leading-relaxed">
               {stats.critical > 0
                 ? isEN
-                  ? `${stats.critical} active major critical risk(s) identified in the selected scope requiring priority mitigation.`
-                  : `${stats.critical} risque(s) critique(s) majeur(s) actif(s) recensé(s) sur le périmètre sélectionné nécessitant une mitigation prioritaire.`
+                  ? `${stats.critical} critical risk(s) identified in the selected scope requiring priority mitigation.`
+                  : `${stats.critical} risque(s) critique(s) majeur(s) recensé(s) sur le périmètre sélectionné nécessitant une mitigation prioritaire.`
                 : isEN
-                ? 'No active major critical risk identified in the selected scope.'
-                : 'Aucun risque critique majeur actif recensé sur le périmètre sélectionné.'}
+                ? 'No major critical risk identified in the selected scope.'
+                : 'Aucun risque critique majeur recensé sur le périmètre sélectionné.'}
+              {' '}
+              <span className="text-slate-400">
+                ({isEN ? 'Weaknesses:' : 'Faiblesses :'} RH {computedStats.faiblesseCounts.rh},{' '}
+                {isEN ? 'Mat.' : 'Mat.'} {computedStats.faiblesseCounts.materielle},{' '}
+                {isEN ? 'Fin.' : 'Fin.'} {computedStats.faiblesseCounts.financiere})
+              </span>
             </p>
           </div>
 
@@ -1172,8 +1237,13 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
                 : 'Délai moyen estimé de traitement des incidents : '}
               <strong className="text-white">{avgTreatmentDays} {isEN ? 'days' : 'jours'}</strong>.{' '}
               {isEN
-                ? `${stats.blocked} activity(ies) currently blocked require governance arbitration.`
-                : `${stats.blocked} activité(s) actuellement bloquée(s) requièrent un arbitrage de la gouvernance.`}
+                ? `${stats.blocked} activity(ies) blocked.`
+                : `${stats.blocked} activité(s) bloquée(s).`}{' '}
+              <span className="text-orange-300 font-semibold">
+                {isEN ? 'Disbursement:' : 'Décaissement :'}{' '}
+                {Math.round(convertFromFCFA(stats.totalDecaissementFCFA, currency)).toLocaleString()}{' '}
+                / {Math.round(convertFromFCFA(stats.totalBudgetFCFA, currency)).toLocaleString()} {currency} ({stats.decaissementRate}%)
+              </span>
             </p>
           </div>
 
@@ -1183,9 +1253,30 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
               <span>{isEN ? 'ISO 31000 RECOMMENDATIONS' : 'RECOMMANDATIONS ISO 31000'}</span>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              {isEN
-                ? 'Strengthen weekly monitoring of corrective actions and reallocate resources to identified bottlenecks.'
-                : "Renforcer le suivi hebdomadaire des actions correctives et réallouer les ressources sur les goulots d'étranglement identifiés."}
+              {(() => {
+                const withActions = riskTasks.filter(
+                  rt =>
+                    (rt.actionPreventive && rt.actionPreventive.trim() !== '') ||
+                    (rt.actionCorrective && rt.actionCorrective.trim() !== '') ||
+                    (rt.resolutionFinale && rt.resolutionFinale.trim() !== '') ||
+                    (rt.commentaire && rt.commentaire.trim() !== '')
+                );
+                if (withActions.length > 0) {
+                  const latest = withActions[withActions.length - 1];
+                  const snippet =
+                    latest.actionCorrective?.trim() ||
+                    latest.actionPreventive?.trim() ||
+                    latest.resolutionFinale?.trim() ||
+                    latest.commentaire?.trim() ||
+                    '';
+                  return isEN
+                    ? `${withActions.length} documented action plan(s). Latest follow-up (${latest.libelleRisque || latest.name}): "${snippet}"`
+                    : `${withActions.length} plan(s) d'action renseigné(s). Dernier suivi (${latest.libelleRisque || latest.name}) : « ${snippet} »`;
+                }
+                return isEN
+                  ? 'Strengthen weekly monitoring of corrective actions and reallocate resources to identified bottlenecks.'
+                  : "Renforcer le suivi hebdomadaire des actions correctives et réallouer les ressources sur les goulots d'étranglement identifiés.";
+              })()}
             </p>
           </div>
         </div>
@@ -1963,17 +2054,37 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
         <div className="lg:col-span-6 space-y-6">
           {/* Card 1: Détail des incidents de la cellule */}
           <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-xs">
-            <h3 className="font-black text-slate-900 dark:text-white text-sm">
-              {isEN ? 'Cell Incident Details' : 'Détail des incidents de la cellule'}
-            </h3>
-            <p className="text-[11px] text-slate-400 mt-0.5 mb-4">
-              {isEN ? 'Select a cell in the matrix to filter' : 'Sélectionnez une case de la matrice pour filtrer'}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-slate-900 dark:text-white text-sm">
+                  {isEN ? 'Cell Incident Details' : 'Détail des incidents de la cellule'}
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5 mb-4">
+                  {selectedDashCell
+                    ? isEN
+                      ? `Filtered on cell (Prob: ${selectedDashCell.prob}/4, Sev: ${selectedDashCell.grav}/4) — ${selectedCellRisks.length} incident(s)`
+                      : `Filtré sur la cellule (Prob: ${selectedDashCell.prob}/4, Grav: ${selectedDashCell.grav}/4) — ${selectedCellRisks.length} incident(s)`
+                    : isEN
+                    ? `Showing all ${riskTasks.length} tracked incident(s) — click a matrix cell to filter`
+                    : `Affichage des ${riskTasks.length} incident(s) suivis — cliquez sur une case de la matrice pour filtrer`}
+                </p>
+              </div>
+              {selectedDashCell && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDashCell(null)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:bg-orange-100 hover:text-orange-700 cursor-pointer shrink-0"
+                >
+                  {isEN ? 'Show all' : 'Tout afficher'}
+                </button>
+              )}
+            </div>
 
-            {selectedDashCell ? (
-              <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                {selectedCellRisks.length > 0 ? (
-                  selectedCellRisks.map(r => (
+            {(() => {
+              const displayedIncidents = selectedDashCell ? selectedCellRisks : riskTasks;
+              return displayedIncidents.length > 0 ? (
+                <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                  {displayedIncidents.map(r => (
                     <div
                       key={r.id}
                       className="p-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl space-y-1.5"
@@ -1982,44 +2093,97 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
                         <span className="text-xs font-black text-slate-900 dark:text-white">
                           {r.libelleRisque || r.name}
                         </span>
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300">
-                          {getTranslatedDropdownLabel(r.riskStatus || 'nouveau', language)}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-slate-200/80 text-slate-800 dark:bg-slate-700 dark:text-slate-200">
+                            PESTEL {r.evaluationPestel} • {getTranslatedDropdownLabel(r.criticite || 'modéré', language)}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300">
+                            {getTranslatedDropdownLabel(r.riskStatus || 'nouveau', language)}
+                          </span>
+                        </div>
                       </div>
                       {r.libelleRisque && (
                         <p className="text-[10px] text-slate-500">
                           {isEN ? 'Activity:' : 'Activité :'} <strong>{r.name}</strong>
                         </p>
                       )}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-600 dark:text-slate-300">
+                        <span>
+                          {isEN ? 'Category:' : 'Catégorie :'}{' '}
+                          <strong>{getTranslatedDropdownLabel(r.categorie || r.nature || '', language)}</strong>
+                        </span>
+                        <span>
+                          {isEN ? 'Impact:' : 'Conséquence :'}{' '}
+                          <strong>{getTranslatedDropdownLabel(r.consequence || 'qualité', language)}</strong>
+                        </span>
+                        <span>
+                          {isEN ? 'Weakness:' : 'Faiblesse :'}{' '}
+                          <strong>{getTranslatedDropdownLabel(r.faiblesse || 'ressource humaine', language)}</strong>
+                        </span>
+                        {r.declarePar && (
+                          <span>
+                            {isEN ? 'Declared by:' : 'Déclaré par :'} <strong>{r.declarePar}</strong>
+                          </span>
+                        )}
+                        {(Number(r.montantDecaissement) || 0) > 0 && (
+                          <span className="text-emerald-700 dark:text-emerald-400 font-bold">
+                            {isEN ? 'Disbursed:' : 'Décaissé :'}{' '}
+                            {Math.round(convertFromFCFA(Number(r.montantDecaissement) || 0, currency)).toLocaleString()} {currency}
+                            {r.dateDecaissement ? ` (${r.dateDecaissement})` : ''}
+                          </span>
+                        )}
+                      </div>
+                      {(r.actionPreventive || r.actionCorrective || r.resolutionFinale || r.commentaire) && (
+                        <div className="text-[10px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900/70 p-2 rounded-xl border border-slate-200/70 dark:border-slate-700 space-y-0.5">
+                          {r.actionPreventive && (
+                            <div>
+                              <strong className="text-orange-700 dark:text-orange-400">
+                                {isEN ? 'Preventive:' : 'Action préventive :'}
+                              </strong>{' '}
+                              {r.actionPreventive}
+                            </div>
+                          )}
+                          {r.actionCorrective && (
+                            <div>
+                              <strong className="text-rose-700 dark:text-rose-400">
+                                {isEN ? 'Corrective:' : 'Action corrective :'}
+                              </strong>{' '}
+                              {r.actionCorrective}
+                            </div>
+                          )}
+                          {r.resolutionFinale && (
+                            <div>
+                              <strong className="text-emerald-700 dark:text-emerald-400">
+                                {isEN ? 'Resolution:' : 'Résolution finale :'}
+                              </strong>{' '}
+                              {r.resolutionFinale}
+                            </div>
+                          )}
+                          {r.commentaire && (
+                            <div>
+                              <strong className="text-slate-700 dark:text-slate-300">
+                                {isEN ? 'Comment:' : 'Commentaire :'}
+                              </strong>{' '}
+                              {r.commentaire}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-200/60 dark:border-slate-700">
                         <span>{isEN ? 'Lead:' : 'Resp :'} <strong className="text-slate-800 dark:text-slate-200">{r.assignee || '—'}</strong></span>
                         <span>{isEN ? 'Project:' : 'Projet :'} <strong className="text-slate-800 dark:text-slate-200">{r.projectName}</strong></span>
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="p-8 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
-                    {isEN
-                      ? 'No operational incident recorded in this cell.'
-                      : 'Aucun incident opérationnel enregistré dans cette cellule.'}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="p-8 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center flex flex-col items-center justify-center space-y-1.5">
-                <HelpCircle className="w-6 h-6 text-slate-300 dark:text-slate-600" />
-                <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
                   {isEN
-                    ? 'Select a cell from the left matrix to examine associated incidents.'
-                    : 'Sélectionnez une cellule de la matrice de gauche pour examiner les incidents associés.'}
-                </p>
-                <p className="text-[11px] text-slate-400 max-w-md">
-                  {isEN
-                    ? 'The full list of incident files with preventive and corrective actions will appear directly here.'
-                    : "La liste complète des fiches d'incidents avec actions préventives et correctives s'affichera directement ici."}
-                </p>
-              </div>
-            )}
+                    ? 'No operational incident recorded in this cell.'
+                    : 'Aucun incident opérationnel enregistré dans cette cellule.'}
+                </div>
+              );
+            })()}
 
             <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
               <button
@@ -2077,6 +2241,11 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
                         {getTranslatedDropdownLabel(b.criticite || 'critique', language)}
                       </span>
                     </div>
+                    {(b.actionCorrective || b.actionPreventive || b.commentaire) && (
+                      <p className="text-[10px] text-rose-700 dark:text-rose-300">
+                        {b.actionCorrective || b.actionPreventive || b.commentaire}
+                      </p>
+                    )}
                     <div className="flex items-center justify-between text-[10px] text-slate-500">
                       <span>{isEN ? 'Lead:' : 'Resp :'} <strong>{b.assignee || '—'}</strong></span>
                       <span>{isEN ? 'Project:' : 'Projet :'} <strong>{b.projectName}</strong></span>
@@ -2756,18 +2925,25 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                 </select>
                               </td>
 
-                              {/* 8. PROBABILITÉ (Rempli automatiquement, met à jour la Criticité) */}
+                              {/* 8. PROBABILITÉ (Rempli automatiquement, met à jour la Criticité et la Tendance) */}
                               <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
                                 <select
                                   value={currentProb}
                                   onChange={e => {
                                     const nextProb = e.target.value;
                                     const nextCrit = computeCriticiteFromProbAndGrav(nextProb, currentGrav);
+                                    const nextTend: 'stable' | 'hausse' | 'baisse' =
+                                      nextCrit === 'tres critique' || nextCrit === 'critique' || rStat === 'bloqué'
+                                        ? 'hausse'
+                                        : nextCrit === 'faible' || rStat === 'traité'
+                                        ? 'baisse'
+                                        : 'stable';
                                     onUpdateTask &&
                                       onUpdateTask(item.projId, t.id, {
                                         probabilite: nextProb as any,
                                         gravite: currentGrav as any,
-                                        criticite: nextCrit
+                                        criticite: nextCrit,
+                                        tendance: nextTend
                                       });
                                   }}
                                   className="bg-transparent p-1 text-center text-[10px] font-semibold capitalize rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
@@ -2778,18 +2954,25 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                 </select>
                               </td>
 
-                              {/* 9. GRAVITÉ / IMPACT (Rempli automatiquement, met à jour la Criticité) */}
+                              {/* 9. GRAVITÉ / IMPACT (Rempli automatiquement, met à jour la Criticité et la Tendance) */}
                               <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
                                 <select
                                   value={currentGrav}
                                   onChange={e => {
                                     const nextGrav = e.target.value;
                                     const nextCrit = computeCriticiteFromProbAndGrav(currentProb, nextGrav);
+                                    const nextTend: 'stable' | 'hausse' | 'baisse' =
+                                      nextCrit === 'tres critique' || nextCrit === 'critique' || rStat === 'bloqué'
+                                        ? 'hausse'
+                                        : nextCrit === 'faible' || rStat === 'traité'
+                                        ? 'baisse'
+                                        : 'stable';
                                     onUpdateTask &&
                                       onUpdateTask(item.projId, t.id, {
                                         probabilite: currentProb as any,
                                         gravite: nextGrav as any,
-                                        criticite: nextCrit
+                                        criticite: nextCrit,
+                                        tendance: nextTend
                                       });
                                   }}
                                   className="bg-transparent p-1 text-center text-[10px] font-semibold capitalize rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
@@ -2814,7 +2997,7 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                               {/* 11. CONSÉQUENCE SI AVÉRÉ */}
                               <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
                                 <select
-                                  value={t.consequence || 'délai'}
+                                  value={t.consequence || 'qualité'}
                                   onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { consequence: e.target.value as any })}
                                   className="bg-transparent p-1 text-center text-[10px] font-bold uppercase rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
                                 >
@@ -2840,7 +3023,7 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                               {/* 13. TENDANCE */}
                               <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
                                 <select
-                                  value={t.tendance || 'stable'}
+                                  value={autoRisk.tendance}
                                   onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { tendance: e.target.value as any })}
                                   className="bg-transparent p-1 text-center text-[10px] font-bold rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
                                 >
@@ -2886,25 +3069,42 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                         : nextRiskStatus === 'en traitement'
                                         ? 'En cours'
                                         : 'À faire';
+                                    const autoByStatus = deriveAutoRiskParameters(
+                                      {
+                                        ...t,
+                                        riskStatus: nextRiskStatus,
+                                        status: mappedStatus,
+                                        probabilite: undefined,
+                                        gravite: undefined,
+                                        tendance: undefined
+                                      },
+                                      currentPestelScore,
+                                      mappedStatus
+                                    );
                                     onUpdateTask &&
                                       onUpdateTask(item.projId, t.id, {
                                         riskStatus: nextRiskStatus,
                                         status: mappedStatus,
                                         manualBlocked: nextRiskStatus === 'bloqué',
+                                        probabilite: autoByStatus.probabilite,
+                                        gravite: autoByStatus.gravite,
+                                        criticite: autoByStatus.criticite,
+                                        tendance: autoByStatus.tendance,
                                         ...(nextRiskStatus === 'traité'
                                           ? {
                                               actualStartDate: t.actualStartDate || t.dateIdentification || t.startDate || todayISO,
-                                              actualEndDate: t.dateResolution || todayISO,
-                                              dateResolution: t.dateResolution || todayISO
+                                              actualEndDate: t.dateResolution || t.actualEndDate || todayISO,
+                                              dateResolution: t.dateResolution || t.actualEndDate || todayISO
                                             }
                                           : nextRiskStatus === 'en traitement'
                                           ? {
                                               actualStartDate: t.actualStartDate || t.dateIdentification || t.startDate || todayISO,
-                                              actualEndDate: ''
+                                              actualEndDate: '',
+                                              dateResolution: ''
                                             }
                                           : nextRiskStatus === 'bloqué'
-                                          ? { actualEndDate: '' }
-                                          : { actualStartDate: '', actualEndDate: '' })
+                                          ? { actualEndDate: '', dateResolution: '' }
+                                          : { actualStartDate: '', actualEndDate: '', dateResolution: '' })
                                       });
                                   }}
                                   className="bg-transparent p-1 text-center font-black text-[9px] uppercase tracking-wider rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
@@ -2919,7 +3119,10 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                               <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] align-top">
                                 <input
                                   type="date"
-                                  value={t.dateResolution || ''}
+                                  value={
+                                    t.dateResolution ||
+                                    (rStat === 'traité' ? t.actualEndDate || t.endDate || '' : '')
+                                  }
                                   onChange={e => {
                                     const nextDate = e.target.value;
                                     onUpdateTask &&
@@ -2930,6 +3133,7 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                           ? {
                                               riskStatus: 'traité',
                                               status: 'Terminé',
+                                              tendance: 'baisse',
                                               manualBlocked: false,
                                               actualStartDate: t.actualStartDate || t.dateIdentification || t.startDate || nextDate
                                             }
