@@ -15,7 +15,11 @@ import {
   getTodayISO
 } from './pertUtils';
 import { StructuredA4Table } from './docTemplates';
-import { ensureDossierCategorizedActors } from './db';
+import {
+  ensureDossierCategorizedActors,
+  normalizeRaciActorToPosition,
+  normalizeRaciFieldList
+} from './db';
 
 
 export type MasterMatrixId =
@@ -180,37 +184,37 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
     ],
     associatedDocsLabels: 'Docs 3 (Note Méthodo), 5 (Cadrage), 6 (Démarrage), 7 (CAP), 8 (Mi-Parcours), 9 (Grille OCDE), 11 (Final), 12 (CV Exécutif), 13 (CV Détaillé), PTBA, Slides 16 à 22',
     columns: [
-      { key: 'Code_Resultat', label: '1. Code_Resultat', inputType: 'text', placeholder: 'Ex: IMP-1, EFF-1, EXT-1.1', minWidthPx: 105 },
+      { key: 'Code_Resultat', label: '1. Code_Resultat', inputType: 'text', placeholder: 'Ex: IMP-1, EFF-1, EXT-1.1', minWidthPx: 140 },
       {
         key: 'Niveau_GAR',
         label: '2. Niveau_GAR',
         inputType: 'select',
         options: ['Impact', 'Effet / Outcome', 'Extrant / Output', 'Activité'],
-        minWidthPx: 145
+        minWidthPx: 185
       },
-      { key: 'Intitule_Resultat', label: '3. Intitule_Resultat', inputType: 'textarea', placeholder: 'Intitulé du résultat attendu...', minWidthPx: 220 },
-      { key: 'Indicateur_SMART', label: '4. Indicateur_SMART', inputType: 'textarea', placeholder: 'Indicateur objectivement vérifiable...', minWidthPx: 200 },
-      { key: 'Baseline', label: '5. Baseline (Réf.)', inputType: 'text', placeholder: 'Ex: 0', minWidthPx: 105, isRightAligned: true },
-      { key: 'Cible', label: '6. Cible', inputType: 'number', placeholder: 'Ex: 100', minWidthPx: 95, isRightAligned: true },
-      { key: 'Valeur_Atteinte', label: '7. Valeur_Atteinte', inputType: 'number', placeholder: 'Ex: 65', minWidthPx: 115, isRightAligned: true },
+      { key: 'Intitule_Resultat', label: '3. Intitule_Resultat', inputType: 'textarea', placeholder: 'Intitulé du résultat attendu...', minWidthPx: 320 },
+      { key: 'Indicateur_SMART', label: '4. Indicateur_SMART', inputType: 'textarea', placeholder: 'Indicateur objectivement vérifiable...', minWidthPx: 300 },
+      { key: 'Baseline', label: '5. Baseline (Réf.)', inputType: 'text', placeholder: 'Ex: 0', minWidthPx: 135, isRightAligned: true },
+      { key: 'Cible', label: '6. Cible', inputType: 'number', placeholder: 'Ex: 100', minWidthPx: 125, isRightAligned: true },
+      { key: 'Valeur_Atteinte', label: '7. Valeur_Atteinte', inputType: 'number', placeholder: 'Ex: 65', minWidthPx: 145, isRightAligned: true },
       {
         key: 'Taux_Realisation_%',
         label: '8. Taux_Realisation_% (Auto)',
         inputType: 'computed',
         helperFormula: '(Valeur_Atteinte / Cible) * 100',
-        minWidthPx: 130,
+        minWidthPx: 165,
         isRightAligned: true
       },
-      { key: 'Source_Verification', label: '9. Source_Verification (MdV)', inputType: 'text', placeholder: 'Rapports CAP, PV, Enquêtes...', minWidthPx: 175 },
+      { key: 'Source_Verification', label: '9. Source_Verification (MdV)', inputType: 'textarea', placeholder: 'Rapports CAP, PV, Enquêtes...', minWidthPx: 260 },
       {
         key: 'Frequence_Collecte',
         label: '10. Frequence_Collecte',
         inputType: 'select',
         options: ['Mensuelle', 'Trimestrielle', 'Semestrielle', 'Annuelle'],
-        minWidthPx: 135
+        minWidthPx: 175
       },
-      { key: 'Responsable_Collecte', label: '11. Responsable_Collecte', inputType: 'text', placeholder: 'Ex: Cellule S&E / PMO', minWidthPx: 150 },
-      { key: 'Hypotheses_Critiques', label: '12. Hypotheses_Critiques', inputType: 'textarea', placeholder: 'Conditions externes de réussite...', minWidthPx: 190 }
+      { key: 'Responsable_Collecte', label: '11. Responsable_Collecte', inputType: 'textarea', placeholder: 'Ex: Cellule S&E / PMO', minWidthPx: 240 },
+      { key: 'Hypotheses_Critiques', label: '12. Hypotheses_Critiques', inputType: 'textarea', placeholder: 'Conditions externes de réussite...', minWidthPx: 280 }
     ]
   },
   {
@@ -241,30 +245,30 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
     ],
     associatedDocsLabels: 'Docs 2 (TDR), 3 (Note Méthodo), 4 (Lettre Mission), 5 (Cadrage), 6 (Démarrage), 7 (CAP), 8 (Mi-Parcours), 11 (Final), 15 (TDR Simplifiés), PTBA, PTT, Slides 16 à 22',
     columns: [
-      { key: 'Code_WBS', label: '1. Code_WBS', inputType: 'text', placeholder: 'Ex: 1.1, T.1.1', minWidthPx: 95 },
-      { key: 'Phase_Lot', label: '2. Phase_Lot', inputType: 'text', placeholder: 'Ex: AVANT PROJET', minWidthPx: 145 },
-      { key: 'Intitule_Tache_Activite', label: '3. Intitule_Tache_Activite', inputType: 'textarea', placeholder: 'Intitulé de la tâche ou activité...', minWidthPx: 220 },
-      { key: 'Taches_Predecesseurs', label: '4. Taches_Predecesseurs', inputType: 'text', placeholder: 'Ex: Aucun, T.1.1', minWidthPx: 120 },
-      { key: 'Duree_Jours', label: '5. Duree_Jours', inputType: 'number', placeholder: 'Ex: 30', minWidthPx: 95, isRightAligned: true },
-      { key: 'Date_Debut_Prevue', label: '6. Date_Debut_Prevue', inputType: 'date', minWidthPx: 135 },
-      { key: 'Date_Fin_Prevue', label: '7. Date_Fin_Prevue', inputType: 'date', minWidthPx: 135 },
-      { key: 'Date_Fin_Reelle', label: '8. Date_Fin_Reelle', inputType: 'date', minWidthPx: 135 },
-      { key: 'Jalon_Associe', label: '9. Jalon_Associe', inputType: 'text', placeholder: 'Livrable ou jalon associé...', minWidthPx: 165 },
+      { key: 'Code_WBS', label: '1. Code_WBS', inputType: 'text', placeholder: 'Ex: 1.1, T.1.1', minWidthPx: 125 },
+      { key: 'Phase_Lot', label: '2. Phase_Lot', inputType: 'textarea', placeholder: 'Ex: AVANT PROJET', minWidthPx: 230 },
+      { key: 'Intitule_Tache_Activite', label: '3. Intitule_Tache_Activite', inputType: 'textarea', placeholder: 'Intitulé de la tâche ou activité...', minWidthPx: 320 },
+      { key: 'Taches_Predecesseurs', label: '4. Taches_Predecesseurs', inputType: 'text', placeholder: 'Ex: Aucun, T.1.1', minWidthPx: 155 },
+      { key: 'Duree_Jours', label: '5. Duree_Jours', inputType: 'number', placeholder: 'Ex: 30', minWidthPx: 125, isRightAligned: true },
+      { key: 'Date_Debut_Prevue', label: '6. Date_Debut_Prevue', inputType: 'date', minWidthPx: 165 },
+      { key: 'Date_Fin_Prevue', label: '7. Date_Fin_Prevue', inputType: 'date', minWidthPx: 165 },
+      { key: 'Date_Fin_Reelle', label: '8. Date_Fin_Reelle', inputType: 'date', minWidthPx: 165 },
+      { key: 'Jalon_Associe', label: '9. Jalon_Associe', inputType: 'textarea', placeholder: 'Livrable ou jalon associé...', minWidthPx: 260 },
       {
         key: 'Chemin_Critique_PERT',
         label: '10. Chemin_Critique_PERT',
         inputType: 'select',
         options: ['Oui - Critique', 'Non - Marge libre'],
-        minWidthPx: 150
+        minWidthPx: 185
       },
-      { key: 'Valeur_Atteinte', label: '11. Valeur_Atteinte', inputType: 'number', placeholder: 'Ex: 100', minWidthPx: 110, isRightAligned: true },
-      { key: 'Cible', label: '12. Cible', inputType: 'number', placeholder: 'Ex: 100', minWidthPx: 95, isRightAligned: true },
+      { key: 'Valeur_Atteinte', label: '11. Valeur_Atteinte', inputType: 'number', placeholder: 'Ex: 100', minWidthPx: 140, isRightAligned: true },
+      { key: 'Cible', label: '12. Cible', inputType: 'number', placeholder: 'Ex: 100', minWidthPx: 125, isRightAligned: true },
       {
         key: 'Taux_Avancement_%',
         label: '13. Taux_Avancement_% (Auto)',
         inputType: 'computed',
         helperFormula: '(Valeur_Atteinte / Cible) * 100',
-        minWidthPx: 130,
+        minWidthPx: 165,
         isRightAligned: true
       },
       {
@@ -272,7 +276,7 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
         label: '14. Statut_Execution',
         inputType: 'select',
         options: ['Terminé', 'En cours', 'En retard', 'Non démarré'],
-        minWidthPx: 135
+        minWidthPx: 175
       }
     ]
   },
@@ -302,16 +306,16 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
     ],
     associatedDocsLabels: 'Docs 2 (TDR), 3 (Note Méthodo), 4 (Lettre Mission), 5 (Cadrage), 6 (Démarrage), 10 (NDA), 12 (CV Exécutif), 13 (CV Détaillé), 15 (TDR Simplifiés), PTBA, PTT, Slides 16 à 20',
     columns: [
-      { key: 'Code_Acteur_Lot', label: '1. Code_Acteur_Lot', inputType: 'text', placeholder: 'Ex: EXP-01 / T.1.1', minWidthPx: 110 },
-      { key: 'Domaine_Livrable_Activite', label: '2. Domaine_Livrable_Activite', inputType: 'textarea', placeholder: 'Activité ou lot sous responsabilité...', minWidthPx: 210 },
-      { key: 'Role_Poste_Expert', label: '3. Role_Poste_Expert', inputType: 'text', placeholder: 'Ex: Chef de Mission / Architecte SI', minWidthPx: 165 },
-      { key: 'Entite_Organisation', label: '4. Entite_Organisation', inputType: 'text', placeholder: 'Ex: UGP / Direction Générale', minWidthPx: 160 },
-      { key: 'Qualification_Niveau', label: '5. Qualification_Niveau', inputType: 'text', placeholder: 'Ex: Bac+5 / PMP (10 ans exp.)', minWidthPx: 175 },
-      { key: 'Charge_Homme_Jours', label: '6. Charge_Homme_Jours (H/J)', inputType: 'number', placeholder: 'Ex: 45', minWidthPx: 115, isRightAligned: true },
-      { key: 'R_Realisateur', label: '7. R_Realisateur', inputType: 'text', placeholder: 'Responsable opérationnel (R)', minWidthPx: 145 },
-      { key: 'A_Approbateur', label: '8. A_Approbateur', inputType: 'text', placeholder: 'Autorité de validation (A)', minWidthPx: 145 },
-      { key: 'C_Consulte', label: '9. C_Consulte', inputType: 'text', placeholder: 'Expert consulté (C)', minWidthPx: 145 },
-      { key: 'I_Informe', label: '10. I_Informe', inputType: 'text', placeholder: 'Partie informée (I)', minWidthPx: 145 }
+      { key: 'Code_Acteur_Lot', label: '1. Code_Acteur_Lot', inputType: 'text', placeholder: 'Ex: EXP-01 / T.1.1', minWidthPx: 135 },
+      { key: 'Domaine_Livrable_Activite', label: '2. Domaine_Livrable_Activite', inputType: 'textarea', placeholder: 'Activité ou lot sous responsabilité...', minWidthPx: 300 },
+      { key: 'Role_Poste_Expert', label: '3. Role_Poste_Expert (Poste & Titulaire)', inputType: 'textarea', placeholder: 'Ex: Poste RACI & Nom/Prénoms (Catégorie)', minWidthPx: 260 },
+      { key: 'Entite_Organisation', label: '4. Entite_Organisation', inputType: 'textarea', placeholder: 'Ex: UGP / Direction Générale', minWidthPx: 240 },
+      { key: 'Qualification_Niveau', label: '5. Qualification_Niveau', inputType: 'textarea', placeholder: 'Ex: Bac+5 / PMP (10 ans exp.)', minWidthPx: 240 },
+      { key: 'Charge_Homme_Jours', label: '6. Charge_Homme_Jours (H/J)', inputType: 'number', placeholder: 'Ex: 45', minWidthPx: 140, isRightAligned: true },
+      { key: 'R_Realisateur', label: '7. R_Realisateur (Poste RACI)', inputType: 'textarea', placeholder: 'Poste Responsable opérationnel (R)', minWidthPx: 230 },
+      { key: 'A_Approbateur', label: '8. A_Approbateur (Poste RACI)', inputType: 'textarea', placeholder: 'Poste Autorité de validation (A)', minWidthPx: 230 },
+      { key: 'C_Consulte', label: '9. C_Consulte (Poste RACI)', inputType: 'textarea', placeholder: 'Poste Expert consulté (C)', minWidthPx: 230 },
+      { key: 'I_Informe', label: '10. I_Informe (Poste RACI)', inputType: 'textarea', placeholder: 'Poste Partie informée (I)', minWidthPx: 230 }
     ]
   },
   {
@@ -334,8 +338,8 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
     ],
     associatedDocsLabels: 'Docs 5 (Cadrage), 6 (Démarrage), 9 (Grille OCDE), 10 (NDA), 11 (Final), 14 (PV de Réunion), PTBA, Slides 17, 18, 19',
     columns: [
-      { key: 'Code_PP', label: '1. Code_PP', inputType: 'text', placeholder: 'Ex: PP-01', minWidthPx: 95 },
-      { key: 'Nom_Institution_Groupe', label: '2. Nom_Institution_Groupe', inputType: 'text', placeholder: 'Nom de l’institution ou groupe...', minWidthPx: 185 },
+      { key: 'Code_PP', label: '1. Code_PP', inputType: 'text', placeholder: 'Ex: PP-01', minWidthPx: 120 },
+      { key: 'Nom_Institution_Groupe', label: '2. Poste, Nom & Prénoms & Organisation', inputType: 'textarea', placeholder: 'Poste RACI, Nom & Prénoms et Institution...', minWidthPx: 280 },
       {
         key: 'Categorie_Acteur',
         label: '3. Categorie_Acteur',
@@ -352,15 +356,15 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
           'Autorité locale',
           'Société civile'
         ],
-        minWidthPx: 160
+        minWidthPx: 195
       },
 
-      { key: 'Role_Dans_Projet', label: '4. Role_Dans_Projet', inputType: 'textarea', placeholder: 'Rôle et prérogatives dans le projet...', minWidthPx: 195 },
-      { key: 'Niveau_Pouvoir_1_5', label: '5. Niveau_Pouvoir (1-5)', inputType: 'select', options: ['5', '4', '3', '2', '1'], minWidthPx: 115, isRightAligned: true },
-      { key: 'Niveau_Interet_1_5', label: '6. Niveau_Interet (1-5)', inputType: 'select', options: ['5', '4', '3', '2', '1'], minWidthPx: 115, isRightAligned: true },
-      { key: 'Attentes_Enjeux_Majeurs', label: '7. Attentes_Enjeux_Majeurs', inputType: 'textarea', placeholder: 'Enjeux et attentes spécifiques...', minWidthPx: 200 },
-      { key: 'Strategie_Engagement', label: '8. Strategie_Engagement', inputType: 'textarea', placeholder: 'Stratégie de mobilisation et concertation...', minWidthPx: 195 },
-      { key: 'Canal_Frequence_Comm', label: '9. Canal_Frequence_Comm', inputType: 'text', placeholder: 'Ex: COPIL Mensuel / Rapports CAP', minWidthPx: 170 }
+      { key: 'Role_Dans_Projet', label: '4. Role_Dans_Projet & Contacts', inputType: 'textarea', placeholder: 'Rôle RACI, Gouvernance et Contacts...', minWidthPx: 280 },
+      { key: 'Niveau_Pouvoir_1_5', label: '5. Niveau_Pouvoir (1-5)', inputType: 'select', options: ['5', '4', '3', '2', '1'], minWidthPx: 145, isRightAligned: true },
+      { key: 'Niveau_Interet_1_5', label: '6. Niveau_Interet (1-5)', inputType: 'select', options: ['5', '4', '3', '2', '1'], minWidthPx: 145, isRightAligned: true },
+      { key: 'Attentes_Enjeux_Majeurs', label: '7. Attentes_Enjeux_Majeurs', inputType: 'textarea', placeholder: 'Enjeux et attentes spécifiques...', minWidthPx: 280 },
+      { key: 'Strategie_Engagement', label: '8. Strategie_Engagement', inputType: 'textarea', placeholder: 'Stratégie de mobilisation et concertation...', minWidthPx: 280 },
+      { key: 'Canal_Frequence_Comm', label: '9. Canal_Frequence_Comm', inputType: 'textarea', placeholder: 'Ex: COPIL Mensuel / Rapports CAP', minWidthPx: 240 }
     ]
   },
   {
@@ -392,22 +396,22 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
     ],
     associatedDocsLabels: 'Docs 2 (TDR), 4 (Lettre Mission), 5 (Cadrage), 6 (Démarrage), 7 (CAP), 8 (Mi-Parcours), 11 (Final), 12 (CV Exécutif), 13 (CV Détaillé), 15 (TDR Simplifiés), PTBA, PTT, Slides 16 à 22',
     columns: [
-      { key: 'Code_Ligne_Budget', label: '1. Code_Ligne_Budget', inputType: 'text', placeholder: 'Ex:LB-01', minWidthPx: 110 },
-      { key: 'Rubrique_Activite_PTBA', label: '2. Rubrique_Activite_PTBA', inputType: 'textarea', placeholder: 'Intitulé de la ligne budgétaire PTBA...', minWidthPx: 210 },
-      { key: 'Source_Financement', label: '3. Source_Financement', inputType: 'text', placeholder: 'Ex: Bailleur / État / Fonds Propres', minWidthPx: 155 },
-      { key: 'Unite', label: '4. Unite', inputType: 'select', options: ['Forfait', 'H/J', 'Kit', 'Mois', 'Lot'], minWidthPx: 100 },
-      { key: 'Quantite', label: '5. Quantite', inputType: 'number', placeholder: 'Ex: 1', minWidthPx: 90, isRightAligned: true },
-      { key: 'Cout_Unitaire', label: '6. Cout_Unitaire', inputType: 'number', placeholder: 'Montant unitaire', minWidthPx: 125, isRightAligned: true },
-      { key: 'Budget_Initial_BAC', label: '7. Budget_Initial_BAC', inputType: 'number', placeholder: 'Budget voté (BAC)', minWidthPx: 135, isRightAligned: true },
-      { key: 'Budget_Engage', label: '8. Budget_Engage', inputType: 'number', placeholder: 'Montant engagé', minWidthPx: 130, isRightAligned: true },
-      { key: 'Cout_Reel_AC', label: '9. Cout_Reel_AC (Décaissé)', inputType: 'number', placeholder: 'Décaissé réel (AC)', minWidthPx: 135, isRightAligned: true },
-      { key: 'Valeur_Acquise_EV', label: '10. Valeur_Acquise_EV', inputType: 'number', placeholder: 'Valeur acquise (EV)', minWidthPx: 135, isRightAligned: true },
+      { key: 'Code_Ligne_Budget', label: '1. Code_Ligne_Budget', inputType: 'text', placeholder: 'Ex: LB-01', minWidthPx: 140 },
+      { key: 'Rubrique_Activite_PTBA', label: '2. Rubrique_Activite_PTBA', inputType: 'textarea', placeholder: 'Intitulé de la ligne budgétaire PTBA...', minWidthPx: 300 },
+      { key: 'Source_Financement', label: '3. Source_Financement', inputType: 'textarea', placeholder: 'Ex: Bailleur / État / Fonds Propres', minWidthPx: 240 },
+      { key: 'Unite', label: '4. Unite', inputType: 'select', options: ['Forfait', 'H/J', 'Kit', 'Mois', 'Lot'], minWidthPx: 135 },
+      { key: 'Quantite', label: '5. Quantite', inputType: 'number', placeholder: 'Ex: 1', minWidthPx: 115, isRightAligned: true },
+      { key: 'Cout_Unitaire', label: '6. Cout_Unitaire', inputType: 'number', placeholder: 'Montant unitaire', minWidthPx: 165, isRightAligned: true },
+      { key: 'Budget_Initial_BAC', label: '7. Budget_Initial_BAC', inputType: 'number', placeholder: 'Budget voté (BAC)', minWidthPx: 175, isRightAligned: true },
+      { key: 'Budget_Engage', label: '8. Budget_Engage (Décaissé)', inputType: 'number', placeholder: 'Montant engagé / décaissé', minWidthPx: 175, isRightAligned: true },
+      { key: 'Cout_Reel_AC', label: '9. Cout_Reel_AC', inputType: 'number', placeholder: 'Coût réel (AC)', minWidthPx: 175, isRightAligned: true },
+      { key: 'Valeur_Acquise_EV', label: '10. Valeur_Acquise_EV', inputType: 'number', placeholder: 'Valeur acquise (EV)', minWidthPx: 175, isRightAligned: true },
       {
         key: 'Ecart_Cout_CV',
         label: '11. Ecart_Cout_CV (EV-AC)',
         inputType: 'computed',
         helperFormula: 'EV - AC',
-        minWidthPx: 130,
+        minWidthPx: 165,
         isRightAligned: true
       },
       {
@@ -415,7 +419,7 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
         label: '12. Taux_Decaissement_% (Auto)',
         inputType: 'computed',
         helperFormula: '(Cout_Reel_AC / Budget_Initial_BAC) * 100',
-        minWidthPx: 135,
+        minWidthPx: 165,
         isRightAligned: true
       },
       {
@@ -423,7 +427,7 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
         label: '13. Indice_CPI (Auto)',
         inputType: 'computed',
         helperFormula: 'Valeur_Acquise_EV / Cout_Reel_AC',
-        minWidthPx: 115,
+        minWidthPx: 145,
         isRightAligned: true
       }
     ]
@@ -446,28 +450,28 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
     ],
     associatedDocsLabels: 'Docs 3 (Note Méthodo), 8 (Mi-Parcours), 9 (Grille OCDE), 11 (Final), Slides 17, 18, 21, 22',
     columns: [
-      { key: 'Code_QE', label: '1. Code_QE', inputType: 'text', placeholder: 'Ex: QE-1.1', minWidthPx: 95 },
+      { key: 'Code_QE', label: '1. Code_QE', inputType: 'text', placeholder: 'Ex: QE-1.1', minWidthPx: 120 },
       {
         key: 'Critere_OCDE_CAD',
         label: '2. Critere_OCDE_CAD',
         inputType: 'select',
         options: ['Pertinence', 'Cohérence', 'Efficacité', 'Efficience', 'Impact', 'Durabilité'],
-        minWidthPx: 135
+        minWidthPx: 175
       },
-      { key: 'Poids_Critere_%', label: '3. Poids_Critere_%', inputType: 'text', placeholder: 'Ex: 15%', minWidthPx: 105, isRightAligned: true },
-      { key: 'Question_Evaluative_Principale', label: '4. Question_Evaluative_Principale', inputType: 'textarea', placeholder: 'Question évaluative centrale...', minWidthPx: 225 },
-      { key: 'Sous_Questions_Jugement', label: '5. Sous_Questions_Jugement', inputType: 'textarea', placeholder: 'Critères de jugement et sous-questions...', minWidthPx: 200 },
-      { key: 'Indicateur_Reponse', label: '6. Indicateur_Reponse', inputType: 'textarea', placeholder: 'Indicateur SMART de réponse...', minWidthPx: 185 },
-      { key: 'Sources_Triangulation_3_Niveaux', label: '7. Sources_Triangulation_3_Niveaux', inputType: 'textarea', placeholder: '1. Doc | 2. Quantitatif | 3. Qualitatif', minWidthPx: 215 },
-      { key: 'Methode_Outil_Collecte', label: '8. Methode_Outil_Collecte', inputType: 'text', placeholder: 'Revue doc, KII, Focus Group, Audit...', minWidthPx: 170 },
-      { key: 'Cible_Repondants', label: '9. Cible_Repondants', inputType: 'text', placeholder: 'COPIL, UGP, Bénéficiaires, PTF...', minWidthPx: 160 },
-      { key: 'Score_1_a_5', label: '10. Score_1_a_5', inputType: 'select', options: ['5', '4', '3', '2', '1'], minWidthPx: 100, isRightAligned: true },
+      { key: 'Poids_Critere_%', label: '3. Poids_Critere_%', inputType: 'text', placeholder: 'Ex: 15%', minWidthPx: 135, isRightAligned: true },
+      { key: 'Question_Evaluative_Principale', label: '4. Question_Evaluative_Principale', inputType: 'textarea', placeholder: 'Question évaluative centrale...', minWidthPx: 320 },
+      { key: 'Sous_Questions_Jugement', label: '5. Sous_Questions_Jugement', inputType: 'textarea', placeholder: 'Critères de jugement et sous-questions...', minWidthPx: 290 },
+      { key: 'Indicateur_Reponse', label: '6. Indicateur_Reponse', inputType: 'textarea', placeholder: 'Indicateur SMART de réponse...', minWidthPx: 280 },
+      { key: 'Sources_Triangulation_3_Niveaux', label: '7. Sources_Triangulation_3_Niveaux', inputType: 'textarea', placeholder: '1. Doc | 2. Quantitatif | 3. Qualitatif', minWidthPx: 300 },
+      { key: 'Methode_Outil_Collecte', label: '8. Methode_Outil_Collecte', inputType: 'textarea', placeholder: 'Revue doc, KII, Focus Group, Audit...', minWidthPx: 250 },
+      { key: 'Cible_Repondants', label: '9. Cible_Repondants', inputType: 'textarea', placeholder: 'COPIL, UGP, Bénéficiaires, PTF...', minWidthPx: 250 },
+      { key: 'Score_1_a_5', label: '10. Score_1_a_5', inputType: 'select', options: ['5', '4', '3', '2', '1'], minWidthPx: 130, isRightAligned: true },
       {
         key: 'Appreciation_Normative',
         label: '11. Appreciation_Normative',
         inputType: 'select',
         options: ['Très satisfaisant', 'Satisfaisant', 'Moyen', 'Insuffisant', 'Critique'],
-        minWidthPx: 150
+        minWidthPx: 185
       }
     ]
   },
@@ -498,7 +502,7 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
     ],
     associatedDocsLabels: 'Docs 3 (Note Méthodo), 5 (Cadrage), 6 (Démarrage), 7 (CAP), 8 (Mi-Parcours), 9 (Grille OCDE), 10 (NDA), 11 (Final), 14 (PV de Réunion), PTBA, PTT, Slides 17 à 22',
     columns: [
-      { key: 'Code_RAID', label: '1. Code_RAID', inputType: 'text', placeholder: 'Ex: R-01, I-02', minWidthPx: 95 },
+      { key: 'Code_RAID', label: '1. Code_RAID', inputType: 'text', placeholder: 'Ex: R-01, I-02', minWidthPx: 125 },
       {
         key: 'Type_Element',
         label: '2. Type_Element',
@@ -511,20 +515,20 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
           'Biais méthodologique',
           'Risque Sécurité'
         ],
-        minWidthPx: 155
+        minWidthPx: 185
       },
-      { key: 'Categorie', label: '3. Categorie', inputType: 'text', placeholder: 'Opérationnel, Financier, Fiduciaire...', minWidthPx: 145 },
-      { key: 'Description_Precise', label: '4. Description_Precise', inputType: 'textarea', placeholder: 'Description précise du risque ou problème...', minWidthPx: 215 },
-      { key: 'Cause_Racine', label: '5. Cause_Racine', inputType: 'textarea', placeholder: 'Facteur déclencheur / cause racine...', minWidthPx: 185 },
-      { key: 'Consequence_Impact_Projet', label: '6. Consequence_Impact_Projet', inputType: 'textarea', placeholder: 'Effet potentiel sur délais/coûts/qualité...', minWidthPx: 190 },
-      { key: 'Probabilite_1_5', label: '7. Probabilite (1-5)', inputType: 'select', options: ['1', '2', '3', '4', '5'], minWidthPx: 110, isRightAligned: true },
-      { key: 'Impact_1_5', label: '8. Impact (1-5)', inputType: 'select', options: ['1', '2', '3', '4', '5'], minWidthPx: 105, isRightAligned: true },
+      { key: 'Categorie', label: '3. Categorie & PESTEL', inputType: 'textarea', placeholder: 'Secteur PESTEL, Catégorie...', minWidthPx: 230 },
+      { key: 'Description_Precise', label: '4. Description_Precise', inputType: 'textarea', placeholder: 'Description précise du risque ou problème...', minWidthPx: 320 },
+      { key: 'Cause_Racine', label: '5. Cause_Racine & Faiblesse', inputType: 'textarea', placeholder: 'Facteur déclencheur / faiblesse...', minWidthPx: 270 },
+      { key: 'Consequence_Impact_Projet', label: '6. Consequence_Impact_Projet', inputType: 'textarea', placeholder: 'Effet potentiel sur délais/coûts/qualité...', minWidthPx: 280 },
+      { key: 'Probabilite_1_5', label: '7. Probabilite (1-5)', inputType: 'select', options: ['1', '2', '3', '4', '5'], minWidthPx: 140, isRightAligned: true },
+      { key: 'Impact_1_5', label: '8. Impact (1-5)', inputType: 'select', options: ['1', '2', '3', '4', '5'], minWidthPx: 135, isRightAligned: true },
       {
         key: 'Criticite_PxI',
         label: '9. Criticite_PxI (Auto)',
         inputType: 'computed',
         helperFormula: 'Probabilite_1_5 * Impact_1_5',
-        minWidthPx: 135,
+        minWidthPx: 165,
         isRightAligned: true
       },
       {
@@ -532,16 +536,16 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
         label: '10. Strategie_Reponse',
         inputType: 'select',
         options: ['Atténuer', 'Éviter', 'Transférer', 'Accepter', 'Escalader'],
-        minWidthPx: 135
+        minWidthPx: 170
       },
-      { key: 'Plan_Action_Mitigation', label: '11. Plan_Action_Mitigation', inputType: 'textarea', placeholder: 'Mesures préventives et correctives...', minWidthPx: 215 },
-      { key: 'Proprietaire_Risque', label: '12. Proprietaire_Risque', inputType: 'text', placeholder: 'Responsable du suivi...', minWidthPx: 145 },
+      { key: 'Plan_Action_Mitigation', label: '11. Plan_Action_Mitigation', inputType: 'textarea', placeholder: 'Mesures préventives et correctives...', minWidthPx: 320 },
+      { key: 'Proprietaire_Risque', label: '12. Proprietaire_Risque (Poste & Titulaire)', inputType: 'textarea', placeholder: 'Poste RACI & Gestionnaire du risque...', minWidthPx: 250 },
       {
         key: 'Statut_RAID',
         label: '13. Statut_RAID',
         inputType: 'select',
-        options: ['Ouvert', 'Sous contrôle', 'Fermé'],
-        minWidthPx: 125
+        options: ['Ouvert', 'Sous contrôle', 'Clôturé / Résolu', 'Matérialisé (Devenu Issue)', 'Fermé'],
+        minWidthPx: 180
       }
     ]
   },
@@ -554,8 +558,8 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
     associatedDocs: ['cadrage', 'mi_parcours', 'rapport_final', 'ptba', 'slides_cadrage', 'slides_ptba', 'slides_mi_parcours', 'slides_evaluation_finale'],
     associatedDocsLabels: 'Docs 5 (Cadrage / ProDoc), 8 (Mi-Parcours), 11 (Final), PTBA, Slides 17, 19, 21, 22',
     columns: [
-      { key: 'Code_Marche', label: '1. Code_Marche', inputType: 'text', placeholder: 'Ex: PPM-2026-01', minWidthPx: 110 },
-      { key: 'Designation_Acquisition', label: '2. Designation_Acquisition', inputType: 'textarea', placeholder: 'Intitulé du marché ou acquisition...', minWidthPx: 215 },
+      { key: 'Code_Marche', label: '1. Code_Marche', inputType: 'text', placeholder: 'Ex: PPM-2026-01', minWidthPx: 140 },
+      { key: 'Designation_Acquisition', label: '2. Designation_Acquisition', inputType: 'textarea', placeholder: 'Intitulé du marché ou acquisition...', minWidthPx: 310 },
       {
         key: 'Categorie_Marche',
         label: '3. Categorie_Marche',
@@ -566,7 +570,7 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
           'Services de Consultants',
           'Services Courants'
         ],
-        minWidthPx: 165
+        minWidthPx: 205
       },
       {
         key: 'Mode_Passation',
@@ -579,26 +583,26 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
           'Entente Directe',
           'Demande de Cotation'
         ],
-        minWidthPx: 160
+        minWidthPx: 195
       },
       {
         key: 'Revue_Bailleur',
         label: '5. Revue_Bailleur',
         inputType: 'select',
         options: ['Revue a priori / ANO', 'Revue a posteriori'],
-        minWidthPx: 155
+        minWidthPx: 190
       },
-      { key: 'Montant_Estime', label: '6. Montant_Estime', inputType: 'number', placeholder: 'Montant estimatif', minWidthPx: 135, isRightAligned: true },
-      { key: 'Montant_Contractuel_Reel', label: '7. Montant_Contractuel_Reel', inputType: 'number', placeholder: 'Montant signé', minWidthPx: 145, isRightAligned: true },
-      { key: 'Date_Lancement_DAO', label: '8. Date_Lancement_DAO', inputType: 'date', minWidthPx: 135 },
-      { key: 'Date_Attribution_Signature', label: '9. Date_Attribution_Signature', inputType: 'date', minWidthPx: 145 },
-      { key: 'Date_Reception_Prevue_Reelle', label: '10. Date_Reception_Prevue_Reelle', inputType: 'date', minWidthPx: 145 },
+      { key: 'Montant_Estime', label: '6. Montant_Estime', inputType: 'number', placeholder: 'Montant estimatif', minWidthPx: 170, isRightAligned: true },
+      { key: 'Montant_Contractuel_Reel', label: '7. Montant_Contractuel_Reel', inputType: 'number', placeholder: 'Montant signé', minWidthPx: 175, isRightAligned: true },
+      { key: 'Date_Lancement_DAO', label: '8. Date_Lancement_DAO', inputType: 'date', minWidthPx: 165 },
+      { key: 'Date_Attribution_Signature', label: '9. Date_Attribution_Signature', inputType: 'date', minWidthPx: 170 },
+      { key: 'Date_Reception_Prevue_Reelle', label: '10. Date_Reception_Prevue_Reelle', inputType: 'date', minWidthPx: 170 },
       {
         key: 'Statut_Marche',
         label: '11. Statut_Marche',
         inputType: 'select',
         options: ['Planifié', 'En cours', 'Attribué', 'Exécuté / Réceptionné'],
-        minWidthPx: 155
+        minWidthPx: 190
       }
     ]
   },
@@ -631,14 +635,14 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
     ],
     associatedDocsLabels: 'Docs 2 (TDR), 4 (Lettre Mission), 5 (Cadrage), 6 (Démarrage), 7 (CAP), 8 (Mi-Parcours), 10 (NDA), 11 (Final), 13 (CV Détaillé), 15 (TDR Simplifiés), PTBA, PTT, Slides 16 à 22',
     columns: [
-      { key: 'Code_Livrable', label: '1. Code_Livrable', inputType: 'text', placeholder: 'Ex: LIV-01', minWidthPx: 100 },
-      { key: 'Intitule_Livrable_Actif', label: '2. Intitule_Livrable_Actif', inputType: 'textarea', placeholder: 'Nom du livrable ou actif documentaire...', minWidthPx: 210 },
-      { key: 'Description_Format_Attendu', label: '3. Description_Format_Attendu', inputType: 'text', placeholder: 'Ex: Rapport PDF A4 + Base JSON signée', minWidthPx: 185 },
-      { key: 'Date_Echeance_Prevue', label: '4. Date_Echeance_Prevue', inputType: 'date', minWidthPx: 135 },
-      { key: 'Date_Remise_Reelle', label: '5. Date_Remise_Reelle', inputType: 'date', minWidthPx: 135 },
-      { key: 'Criteres_Qualite_Acceptation', label: '6. Criteres_Qualite_Acceptation', inputType: 'textarea', placeholder: 'Critères normatifs ISO/UNEG/TDR...', minWidthPx: 205 },
-      { key: 'Instance_Approbation', label: '7. Instance_Approbation', inputType: 'text', placeholder: 'Ex: COPIL / Comité Technique', minWidthPx: 160 },
-      { key: 'Tranche_Paiement_Associee_%', label: '8. Tranche_Paiement_%', inputType: 'text', placeholder: 'Ex: 20%', minWidthPx: 120, isRightAligned: true },
+      { key: 'Code_Livrable', label: '1. Code_Livrable', inputType: 'text', placeholder: 'Ex: LIV-01', minWidthPx: 135 },
+      { key: 'Intitule_Livrable_Actif', label: '2. Intitule_Livrable_Actif', inputType: 'textarea', placeholder: 'Nom du livrable ou actif documentaire...', minWidthPx: 300 },
+      { key: 'Description_Format_Attendu', label: '3. Description_Format_Attendu', inputType: 'textarea', placeholder: 'Ex: Rapport PDF A4 + Base JSON signée', minWidthPx: 260 },
+      { key: 'Date_Echeance_Prevue', label: '4. Date_Echeance_Prevue', inputType: 'date', minWidthPx: 165 },
+      { key: 'Date_Remise_Reelle', label: '5. Date_Remise_Reelle', inputType: 'date', minWidthPx: 165 },
+      { key: 'Criteres_Qualite_Acceptation', label: '6. Criteres_Qualite_Acceptation', inputType: 'textarea', placeholder: 'Critères normatifs ISO/UNEG/TDR...', minWidthPx: 300 },
+      { key: 'Instance_Approbation', label: '7. Instance_Approbation (Poste RACI-A)', inputType: 'textarea', placeholder: 'Ex: COPIL / Comité Technique', minWidthPx: 230 },
+      { key: 'Tranche_Paiement_Associee_%', label: '8. Tranche_Paiement_%', inputType: 'text', placeholder: 'Ex: 20%', minWidthPx: 145, isRightAligned: true },
       {
         key: 'Statut_Validation',
         label: '9. Statut_Validation',
@@ -650,7 +654,7 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
           'En attente',
           'Rejeté'
         ],
-        minWidthPx: 155
+        minWidthPx: 190
       }
     ]
   },
@@ -663,27 +667,27 @@ export const MASTER_MATRICES_DEFINITIONS: MasterMatrixDefinition[] = [
     associatedDocs: ['cap', 'mi_parcours', 'rapport_final', 'pv_reunion', 'slides_mi_parcours', 'slides_evaluation_finale'],
     associatedDocsLabels: 'Docs 7 (Rapport CAP), 8 (Évaluation Mi-Parcours), 11 (Évaluation Finale & Clôture), 14 (PV de Réunion), Slides 21 & 22',
     columns: [
-      { key: 'Code_Action_Rec', label: '1. Code_Action_Rec', inputType: 'text', placeholder: 'Ex: REC-01 / CAP-01', minWidthPx: 110 },
-      { key: 'Constat_Ecart_Lecon_Identifiee', label: '2. Constat_Ecart_Lecon_Identifiee', inputType: 'textarea', placeholder: 'Constat factuel, écart ou leçon apprise...', minWidthPx: 215 },
-      { key: 'Analyse_Causale_Synthetique', label: '3. Analyse_Causale_Synthetique', inputType: 'textarea', placeholder: 'Cause racine du constat ou glissement...', minWidthPx: 200 },
-      { key: 'Recommandation_Prescription_Action', label: '4. Recommandation_Prescription_Action', inputType: 'textarea', placeholder: 'Prescription corrective ou décision managériale...', minWidthPx: 225 },
+      { key: 'Code_Action_Rec', label: '1. Code_Action_Rec', inputType: 'text', placeholder: 'Ex: REC-01 / CAP-01', minWidthPx: 140 },
+      { key: 'Constat_Ecart_Lecon_Identifiee', label: '2. Constat_Ecart_Lecon_Identifiee', inputType: 'textarea', placeholder: 'Constat factuel, écart ou leçon apprise...', minWidthPx: 300 },
+      { key: 'Analyse_Causale_Synthetique', label: '3. Analyse_Causale_Synthetique', inputType: 'textarea', placeholder: 'Cause racine du constat ou glissement...', minWidthPx: 290 },
+      { key: 'Recommandation_Prescription_Action', label: '4. Recommandation_Prescription_Action', inputType: 'textarea', placeholder: 'Prescription corrective ou décision managériale...', minWidthPx: 320 },
       {
         key: 'Priorite',
         label: '5. Priorite',
         inputType: 'select',
         options: ['Critique / Urgente', 'Haute', 'Moyenne'],
-        minWidthPx: 145
+        minWidthPx: 175
       },
-      { key: 'Indicateur_Verif_Mise_En_Oeuvre', label: '6. Indicateur_Verif_Mise_En_Oeuvre', inputType: 'text', placeholder: 'Preuve de levée de réserve / PV...', minWidthPx: 185 },
-      { key: 'Responsable_Execution', label: '7. Responsable_Execution', inputType: 'text', placeholder: 'Acteur chargé de l’action...', minWidthPx: 155 },
-      { key: 'Echeance_Cible', label: '8. Echeance_Cible', inputType: 'date', minWidthPx: 135 },
-      { key: 'Budget_Additionnel_Requis', label: '9. Budget_Additionnel_Requis', inputType: 'number', placeholder: '0', minWidthPx: 140, isRightAligned: true },
+      { key: 'Indicateur_Verif_Mise_En_Oeuvre', label: '6. Indicateur_Verif_Mise_En_Oeuvre', inputType: 'textarea', placeholder: 'Preuve de levée de réserve / PV...', minWidthPx: 260 },
+      { key: 'Responsable_Execution', label: '7. Responsable_Execution (Poste RACI)', inputType: 'textarea', placeholder: 'Poste chargé de l’action...', minWidthPx: 230 },
+      { key: 'Echeance_Cible', label: '8. Echeance_Cible', inputType: 'date', minWidthPx: 165 },
+      { key: 'Budget_Additionnel_Requis', label: '9. Budget_Additionnel_Requis', inputType: 'number', placeholder: '0', minWidthPx: 170, isRightAligned: true },
       {
         key: 'Statut_Mise_En_Oeuvre',
         label: '10. Statut_Mise_En_Oeuvre',
         inputType: 'select',
         options: ['Réalisé', 'En cours', 'Non échu', 'En retard'],
-        minWidthPx: 135
+        minWidthPx: 175
       }
     ]
   }
@@ -782,7 +786,7 @@ export function resolveProgramRaciContext(
     if (!raw) return [];
     return raw
       .split(',')
-      .map(s => s.trim())
+      .map(s => normalizeRaciActorToPosition(s.trim()))
       .filter(s => s.length > 0 && s !== '—' && !isNeantVal(s));
   };
 
@@ -826,7 +830,9 @@ export function resolveProgramRaciContext(
   const allRaciActors = Array.from(allSet);
   const hasRaciActors = allRaciActors.length > 0;
 
-  const defaultUserName = userProfile.fullName || 'Coordonnateur Général PMO';
+  const defaultUserName = normalizeRaciActorToPosition(
+    userProfile.role || 'Coordonnateur Général PMO'
+  );
   const defaultUserRole =
     userProfile.role || 'Spécialiste en Gestion de Projet & Pilotage Stratégique';
 
@@ -924,6 +930,27 @@ export function buildDefaultMatricesFromApp(
   const recipientRep =
     fields.recipientRepresentative || raciCtx.effectiveAuthorityName;
 
+  const catActorByPosition = new Map<string, CategorizedActor>();
+  raciCtx.categorizedActors.forEach(ca => {
+    catActorByPosition.set(ca.name.trim().toLowerCase(), ca);
+  });
+
+  const formatPositionWithHolder = (posListRaw: string): string => {
+    if (!posListRaw) return '';
+    return posListRaw
+      .split(',')
+      .map(p => {
+        const normPos = normalizeRaciActorToPosition(p.trim());
+        const catAct = catActorByPosition.get(normPos.toLowerCase());
+        if (catAct && catAct.fullName && catAct.fullName.trim()) {
+          return `${normPos} (${catAct.fullName.trim()})`;
+        }
+        return normPos;
+      })
+      .filter(Boolean)
+      .join(', ');
+  };
+
   let totalTasks = 0;
   let completedTasks = 0;
   let inProgressTasks = 0;
@@ -932,6 +959,8 @@ export function buildDefaultMatricesFromApp(
   let totalBudgetFCFA = 0;
   let completedBudgetFCFA = 0;
   let inProgressBudgetFCFA = 0;
+  let totalActualCostFCFA = 0;
+  let totalEarnedValueFCFA = 0;
 
   const m1Rows: MatrixRowData[] = [];
   const m2Rows: MatrixRowData[] = [];
@@ -953,7 +982,7 @@ export function buildDefaultMatricesFromApp(
       STANDARD_PHASES.forEach((pName, phIdx) => {
         const pTasks = (proj.tasks || []).filter(tk => tk.phase === pName);
         pTasks.forEach((tk, tIdx) => {
-          codeMap.set(tk.id, `${tk.type === 'jalon' ? 'J' : 'T'}.${phIdx + 1}.${tIdx + 1}`);
+          codeMap.set(tk.id, `${(tk.taskOrMilestone || tk.type) === 'jalon' ? 'J' : 'T'}.${phIdx + 1}.${tIdx + 1}`);
         });
       });
 
@@ -964,51 +993,99 @@ export function buildDefaultMatricesFromApp(
         const b = Number(task.budget) || 0;
         totalBudgetFCFA += b;
 
-        const taskR = (task.assignee || '').trim() || leadName;
-        const taskA = (task.autorite || '').trim() || raciCtx.effectiveAuthorityName;
-        const taskC = (task.consulte || '').trim() || raciCtx.effectiveConsultedList;
-        const taskI = (task.informe || '').trim() || raciCtx.effectiveInformedList;
+        const taskR =
+          normalizeRaciFieldList(
+            [task.assignee, task.raciR, task.responsabilite].filter(Boolean).join(', ')
+          ) || leadName;
+        const taskA =
+          normalizeRaciFieldList([task.autorite, task.raciA].filter(Boolean).join(', ')) ||
+          raciCtx.effectiveAuthorityName;
+        const taskC =
+          normalizeRaciFieldList([task.consulte, task.raciC].filter(Boolean).join(', ')) ||
+          raciCtx.effectiveConsultedList;
+        const taskI =
+          normalizeRaciFieldList([task.informe, task.raciI].filter(Boolean).join(', ')) ||
+          raciCtx.effectiveInformedList;
         const taskLivrable =
           (task.livrable || '').trim() || `Livrable de l’activité ${task.name}`;
+        const taskBailleur = (task.bailleur || '').trim() || donorName;
+
+        const firstPosR = taskR.split(',')[0]?.trim().toLowerCase() || '';
+        const catActorForTaskR = catActorByPosition.get(firstPosR);
 
         let valAtteinte = 0;
         let statutM2 = 'Non démarré';
         let acTask = 0;
         let evTask = 0;
+        let engageTask = 0;
 
         if (metrics.effectiveStatus === 'Terminé') {
           completedTasks++;
           completedBudgetFCFA += b;
           valAtteinte = 100;
           statutM2 = 'Terminé';
-          acTask = b;
-          evTask = b;
+          acTask = task.coutReel !== undefined && task.coutReel > 0 ? task.coutReel : b;
+          evTask = task.valeurAcquise !== undefined && task.valeurAcquise > 0 ? task.valeurAcquise : b;
+          engageTask =
+            task.montantDecaissement !== undefined && task.montantDecaissement > 0
+              ? task.montantDecaissement
+              : b;
         } else if (metrics.effectiveStatus === 'En cours') {
           inProgressTasks++;
           inProgressBudgetFCFA += b;
-          valAtteinte = 55;
+          evTask =
+            task.valeurAcquise !== undefined && task.valeurAcquise > 0
+              ? task.valeurAcquise
+              : Math.round(b * 0.55);
+          acTask =
+            task.coutReel !== undefined && task.coutReel > 0
+              ? task.coutReel
+              : task.montantDecaissement !== undefined && task.montantDecaissement > 0
+              ? task.montantDecaissement
+              : Math.round(b * 0.6);
+          engageTask =
+            task.montantDecaissement !== undefined && task.montantDecaissement > 0
+              ? task.montantDecaissement
+              : Math.round(b * 0.8);
+          valAtteinte = b > 0 ? Math.min(100, Math.round((evTask / b) * 100)) : 55;
           statutM2 = metrics.ecartFinDays > 0 ? 'En retard' : 'En cours';
-          acTask = Math.round(b * 0.6);
-          evTask = Math.round(b * 0.55);
         } else if (metrics.effectiveStatus === 'Bloqué') {
           blockedTasks++;
-          valAtteinte = 20;
+          evTask =
+            task.valeurAcquise !== undefined && task.valeurAcquise > 0
+              ? task.valeurAcquise
+              : Math.round(b * 0.2);
+          acTask =
+            task.coutReel !== undefined && task.coutReel > 0
+              ? task.coutReel
+              : Math.round(b * 0.25);
+          engageTask =
+            task.montantDecaissement !== undefined && task.montantDecaissement > 0
+              ? task.montantDecaissement
+              : Math.round(b * 0.4);
+          valAtteinte = b > 0 ? Math.min(100, Math.round((evTask / b) * 100)) : 20;
           statutM2 = 'En retard';
-          acTask = Math.round(b * 0.25);
-          evTask = Math.round(b * 0.2);
         } else {
-          valAtteinte = 0;
+          evTask = task.valeurAcquise !== undefined && task.valeurAcquise > 0 ? task.valeurAcquise : 0;
+          acTask = task.coutReel !== undefined && task.coutReel > 0 ? task.coutReel : 0;
+          engageTask =
+            task.montantDecaissement !== undefined && task.montantDecaissement > 0
+              ? task.montantDecaissement
+              : 0;
+          valAtteinte = b > 0 && evTask > 0 ? Math.min(100, Math.round((evTask / b) * 100)) : 0;
           statutM2 = metrics.ecartDebutDays > 0 ? 'En retard' : 'Non démarré';
-          acTask = 0;
-          evTask = 0;
         }
+
+        totalActualCostFCFA += acTask;
+        totalEarnedValueFCFA += evTask;
 
         if (metrics.ecartDebutDays > 0 || metrics.ecartFinDays > 0) {
           delayedTasks++;
         }
 
         const code =
-          codeMap.get(task.id) || `${task.type === 'jalon' ? 'J' : 'T'}.${aIdx + 1}.${tIdx + 1}`;
+          codeMap.get(task.id) ||
+          `${(task.taskOrMilestone || task.type) === 'jalon' ? 'J' : 'T'}.${aIdx + 1}.${tIdx + 1}`;
         const antCode =
           task.antecedent && task.antecedent !== '—'
             ? codeMap.get(task.antecedent) || task.antecedent
@@ -1017,50 +1094,58 @@ export function buildDefaultMatricesFromApp(
         const hjAllocated = Math.max(1, Math.round(durationDays * 0.8));
 
         const riskLibelle = (task.libelleRisque || '').trim() || `Risque lié à « ${task.name} »`;
-        const riskDeclarePar = (task.declarePar || '').trim() || taskR;
-        const riskCategorie = (task.categorie || 'Technologie').trim();
-        const riskEvalPestel = task.evaluationPestel || 3;
-        const riskProbLabel = (task.probabilite || 'Peu probable').trim();
-        const riskGravLabel = (task.gravite || 'Majeur').trim();
-        const riskCritLabel = (task.criticite || 'Modéré').trim();
-        const riskConseq = (task.consequence || 'Qualité').trim();
+        const riskManagerPos = task.gestionnaireRisque
+          ? normalizeRaciFieldList(task.gestionnaireRisque)
+          : taskR.split(',')[0]?.trim() || taskR;
+        const riskOwnerPos = task.decideurProprietaire
+          ? normalizeRaciFieldList(task.decideurProprietaire)
+          : taskA;
+        const riskDeclarePar = (task.declarePar || '').trim() || riskManagerPos;
+        const riskCategorie = (task.categorie || task.nature || 'technologie / technique').trim();
+        const riskEvalPestel = task.evaluationPestel || '3/5';
+        const riskProbLabel = (task.probabilite || 'peu probable').trim().toLowerCase();
+        const riskGravLabel = (task.gravite || 'majeur').trim().toLowerCase();
+        const riskCritLabel = (task.criticite || 'modéré').trim();
+        const riskConseq = (task.consequence || 'qualité').trim();
         const riskFaiblesse = (task.faiblesse || 'ressource humaine').trim();
-        const riskTendance = (task.tendance || 'Stable').trim();
+        const riskTendance = (task.tendance || 'stable').trim();
         const riskPrev =
           (task.actionPreventive || '').trim() ||
           `Contrôle préventif et sécurisation de « ${task.name} »`;
         const riskCorr =
           (task.actionCorrective || '').trim() ||
-          `Plan de traitement correctif piloté par ${taskR}`;
+          `Plan de traitement correctif piloté par ${riskManagerPos}`;
         const riskResFinale =
           (task.resolutionFinale || '').trim() ||
           (metrics.effectiveStatus === 'Terminé' ? `Risque traité — Livrable : ${taskLivrable}` : '');
         const riskComm = (task.commentaire || '').trim();
-        const riskDateId = task.dateIdentification || task.startDate || todayISO;
+        const riskDateId = task.dateIdentification || task.actualStartDate || task.startDate || todayISO;
         const riskDateRes =
           task.dateResolution ||
           (metrics.effectiveStatus === 'Terminé' ? metrics.effectiveActualEndDate : '');
 
         const probMap: Record<string, string> = {
-          Improbable: '1',
-          'Peu probable': '2',
-          Probable: '4',
-          'Très probable': '5'
+          improbable: '1',
+          'peu probable': '2',
+          probable: '4',
+          'très probable': '5',
+          'tres probable': '5'
         };
         const gravMap: Record<string, string> = {
-          Mineur: '2',
-          Majeur: '3',
-          Grave: '4',
-          Catastrophique: '5'
+          mineur: '2',
+          majeur: '3',
+          grave: '4',
+          catastrophique: '5'
         };
         const probScore = probMap[riskProbLabel] || '3';
         const gravScore = gravMap[riskGravLabel] || '3';
+        const rStatLower = (task.riskStatus || '').toLowerCase();
         const statutRaid =
-          metrics.effectiveStatus === 'Terminé' || task.riskStatus === 'Traité'
+          metrics.effectiveStatus === 'Terminé' || rStatLower === 'traité'
             ? 'Clôturé / Résolu'
-            : metrics.effectiveStatus === 'Bloqué' || task.riskStatus === 'Bloqué'
+            : metrics.effectiveStatus === 'Bloqué' || rStatLower === 'bloqué'
             ? 'Matérialisé (Devenu Issue)'
-            : metrics.effectiveStatus === 'En cours' || task.riskStatus === 'En cours'
+            : metrics.effectiveStatus === 'En cours' || rStatLower === 'en traitement'
             ? 'Sous contrôle'
             : 'Ouvert';
 
@@ -1087,17 +1172,16 @@ export function buildDefaultMatricesFromApp(
           })
         );
 
-        // M3: Gouvernance RACI & Ressources Humaines (synchronisé avec l'onglet RACI / Profil Utilisateur par défaut)
+        // M3: Gouvernance RACI (Postes) & Ressources Humaines (synchronisé avec RACI & Catégorie)
         m3Rows.push({
           Code_Acteur_Lot: `RH-${code}`,
           Domaine_Livrable_Activite: `${task.name} (${taskLivrable})`,
-          Role_Poste_Expert:
-            task.responsabilite ||
-            (taskR === userProfile.fullName
-              ? userProfile.role
-              : 'Expert Technique / Responsable Opérationnel'),
-          Entite_Organisation: orgName,
+          Role_Poste_Expert: `${taskR}${
+            catActorForTaskR ? ` — Catégorie : ${catActorForTaskR.category}` : ''
+          }`,
+          Entite_Organisation: catActorForTaskR?.organization || orgName,
           Qualification_Niveau:
+            catActorForTaskR?.roleOrFunction ||
             userProfile.cvCertifications ||
             'Bac+5 / Ingénieur ou Expert Senior (7+ ans exp.)',
           Charge_Homme_Jours: String(hjAllocated),
@@ -1108,20 +1192,12 @@ export function buildDefaultMatricesFromApp(
         });
 
         // M5: Budget Analytique, Exécution Financière & EVM (synchronisé avec Planification & Suivi des risques)
-        const engageTask =
-          metrics.effectiveStatus === 'Terminé'
-            ? b
-            : metrics.effectiveStatus === 'En cours'
-            ? Math.round(b * 0.8)
-            : metrics.effectiveStatus === 'Bloqué'
-            ? Math.round(b * 0.4)
-            : 0;
         m5Rows.push(
           computeMatrixRowCalculations('M5', {
             Code_Ligne_Budget: `PTBA-${aIdx + 1}.${pIdx + 1}.${tIdx + 1}`,
             Rubrique_Activite_PTBA: `${proj.name} — ${task.name}`,
-            Source_Financement: donorName,
-            Unite: task.type === 'jalon' ? 'Forfait' : 'Lot',
+            Source_Financement: taskBailleur,
+            Unite: (task.taskOrMilestone || task.type) === 'jalon' ? 'Forfait' : 'Lot',
             Quantite: '1',
             Cout_Unitaire: String(b),
             Budget_Initial_BAC: String(b),
@@ -1139,24 +1215,24 @@ export function buildDefaultMatricesFromApp(
           computeMatrixRowCalculations('M7', {
             Code_RAID: `R-${code}`,
             Type_Element:
-              metrics.effectiveStatus === 'Bloqué' || task.riskStatus === 'Bloqué'
+              metrics.effectiveStatus === 'Bloqué' || rStatLower === 'bloqué'
                 ? 'Problème / Issue'
                 : 'Risque',
-            Categorie: `${riskCategorie} (PESTEL ${riskEvalPestel}/5 · ${riskConseq})`,
+            Categorie: `${riskCategorie} (PESTEL ${riskEvalPestel} · ${riskConseq})`,
             Description_Precise: `${riskLibelle} — Activité : « ${task.name} » (ID : ${riskDateId}${riskComm ? ` · Note : ${riskComm}` : ''})`,
-            Cause_Racine: `Faiblesse identifiée : ${riskFaiblesse} (Déclaré par : ${riskDeclarePar} · Tendance : ${riskTendance})`,
-            Consequence_Impact_Projet: `Impact ${riskConseq} (${riskGravLabel}, Criticité : ${riskCritLabel}) sur le projet « ${proj.name} »`,
+            Cause_Racine: `Faiblesse : ${riskFaiblesse} (Déclaré par : ${riskDeclarePar} · Tendance : ${riskTendance})`,
+            Consequence_Impact_Projet: `Impact ${riskConseq} (Gravité : ${riskGravLabel}, Criticité : ${riskCritLabel}) sur « ${proj.name} »`,
             Probabilite_1_5: probScore,
             Impact_1_5: gravScore,
             Criticite_PxI: String(Number(probScore) * Number(gravScore)),
             Strategie_Reponse:
-              riskCritLabel === 'Critique' || metrics.effectiveStatus === 'Bloqué'
+              riskCritLabel.toLowerCase().includes('critique') || metrics.effectiveStatus === 'Bloqué'
                 ? 'Escalader'
-                : riskCritLabel === 'Élevée'
+                : riskCritLabel.toLowerCase().includes('modéré')
                 ? 'Atténuer'
                 : 'Accepter',
             Plan_Action_Mitigation: `Préventif : ${riskPrev} | Correctif : ${riskCorr}${riskResFinale ? ` | Résolution : ${riskResFinale}` : ''}`,
-            Proprietaire_Risque: `${taskR} (Déclaré par : ${riskDeclarePar})`,
+            Proprietaire_Risque: `Gestionnaire : ${formatPositionWithHolder(riskManagerPos)} | Décideur : ${formatPositionWithHolder(riskOwnerPos)}`,
             Statut_RAID: statutRaid
           })
         );
@@ -1182,14 +1258,14 @@ export function buildDefaultMatricesFromApp(
             metrics.effectiveStatus === 'Terminé'
               ? riskDateRes || metrics.effectiveActualEndDate
               : '',
-          Criteres_Qualite_Acceptation: `Action préventive : ${riskPrev} | Validation RACI (Autorité A : ${taskA})`,
-          Instance_Approbation: taskA,
+          Criteres_Qualite_Acceptation: `Action préventive : ${riskPrev} | Validation RACI (Autorité A : ${formatPositionWithHolder(taskA)})`,
+          Instance_Approbation: formatPositionWithHolder(taskA),
           'Tranche_Paiement_Associee_%': tranchePct,
           Statut_Validation: statutValid
         });
 
         // M8: Plan de Passation des Marchés
-        if (b > 0 && task.type === 'tache') {
+        if (b > 0 && (task.taskOrMilestone || task.type) === 'tache') {
           const isConsult =
             /étude|audit|conception|cadrage|évaluation|formation/i.test(task.name);
           const isEquip =
@@ -1198,7 +1274,7 @@ export function buildDefaultMatricesFromApp(
             );
           m8Rows.push({
             Code_Marche: `PPM-${dossier.psdYear || 2026}-${String(m8Rows.length + 1).padStart(2, '0')}`,
-            Designation_Acquisition: `${task.name} — Livrable : ${taskLivrable}`,
+            Designation_Acquisition: `${task.name} — Livrable : ${taskLivrable} (${taskBailleur})`,
             Categorie_Marche: isEquip
               ? 'Fournitures / Équipements'
               : isConsult
@@ -1207,7 +1283,10 @@ export function buildDefaultMatricesFromApp(
             Mode_Passation: b >= 25000000 ? 'AON' : b >= 10000000 ? 'Consultation Restreinte' : 'Demande de Cotation',
             Revue_Bailleur: b >= 20000000 ? 'Revue a priori / ANO' : 'Revue a posteriori',
             Montant_Estime: String(b),
-            Montant_Contractuel_Reel: metrics.effectiveStatus === 'Terminé' || metrics.effectiveStatus === 'En cours' ? String(b) : '',
+            Montant_Contractuel_Reel:
+              metrics.effectiveStatus === 'Terminé' || metrics.effectiveStatus === 'En cours'
+                ? String(acTask || b)
+                : '',
             Date_Lancement_DAO: task.startDate || todayISO,
             Date_Attribution_Signature:
               metrics.effectiveStatus !== 'À faire'
@@ -1229,8 +1308,7 @@ export function buildDefaultMatricesFromApp(
         // M10: Capitalisation & Plan d'Action Correctif (alimenté par le Suivi des risques)
         if (
           metrics.effectiveStatus === 'Bloqué' ||
-          riskCritLabel === 'Critique' ||
-          riskCritLabel === 'Élevée' ||
+          riskCritLabel.toLowerCase().includes('critique') ||
           Boolean(task.actionCorrective && task.actionCorrective.trim()) ||
           metrics.ecartDebutDays > 0 ||
           metrics.ecartFinDays > 0
@@ -1238,19 +1316,19 @@ export function buildDefaultMatricesFromApp(
           m10Rows.push({
             Code_Action_Rec: `CAP-${String(m10Rows.length + 1).padStart(2, '0')}`,
             Constat_Ecart_Lecon_Identifiee: `${riskLibelle} (${code} — ${task.name}) · Criticité : ${riskCritLabel} · Statut : ${metrics.effectiveStatus}`,
-            Analyse_Causale_Synthetique: `Faiblesse : ${riskFaiblesse} | Secteur PESTEL : ${riskCategorie} (${riskEvalPestel}/5) | Conséquence : ${riskConseq} | Déclaré par : ${riskDeclarePar}`,
+            Analyse_Causale_Synthetique: `Faiblesse : ${riskFaiblesse} | Secteur PESTEL : ${riskCategorie} (${riskEvalPestel}) | Conséquence : ${riskConseq} | Déclaré par : ${riskDeclarePar}`,
             Recommandation_Prescription_Action: `Action préventive : ${riskPrev} | Action corrective : ${riskCorr}${riskResFinale ? ` | Résolution finale : ${riskResFinale}` : ''}${riskComm ? ` (${riskComm})` : ''}`,
             Priorite:
               pertNode?.isCritical ||
               metrics.effectiveStatus === 'Bloqué' ||
-              riskCritLabel === 'Critique'
+              riskCritLabel.toLowerCase().includes('critique')
                 ? 'Critique / Urgente'
                 : 'Haute',
             Indicateur_Verif_Mise_En_Oeuvre:
-              riskResFinale || `Validation par ${taskA} et passage du risque au statut « Traité »`,
-            Responsable_Execution: taskR,
+              riskResFinale || `Validation par ${formatPositionWithHolder(taskA)} et passage du risque au statut « Traité »`,
+            Responsable_Execution: formatPositionWithHolder(riskManagerPos),
             Echeance_Cible: riskDateRes || task.endDate || todayISO,
-            Budget_Additionnel_Requis: '0',
+            Budget_Additionnel_Requis: String(Math.max(0, acTask - b)),
             Statut_Mise_En_Oeuvre: metrics.effectiveStatus === 'Terminé' ? 'Réalisé' : 'En cours'
           });
         }
@@ -1262,7 +1340,10 @@ export function buildDefaultMatricesFromApp(
   const criticalNodes = allNodes.filter(n => n.isCritical);
   const criticalSeq = criticalNodes.map(n => n.code).join(' -> ') || 'T.1.1 -> T.2.1';
   const maxDur = pertSummaries.reduce((acc, p) => Math.max(acc, p.projectDuration), 0);
-  const committedBudgetFCFA = completedBudgetFCFA + Math.round(inProgressBudgetFCFA * 0.6);
+  const committedBudgetFCFA =
+    totalActualCostFCFA > 0
+      ? totalActualCostFCFA
+      : completedBudgetFCFA + Math.round(inProgressBudgetFCFA * 0.6);
   const financialExecPct =
     totalBudgetFCFA > 0 ? Math.round((committedBudgetFCFA / totalBudgetFCFA) * 100) : 0;
 
@@ -1279,7 +1360,7 @@ export function buildDefaultMatricesFromApp(
       'Taux_Realisation_%': `${progressPct}%`,
       Source_Verification: 'Rapport d’Évaluation Finale (ICR / UNEG) & Enquêtes d’Impact',
       Frequence_Collecte: 'Annuelle',
-      Responsable_Collecte: `${leadName} (${orgName})`,
+      Responsable_Collecte: `${formatPositionWithHolder(leadName)} (${orgName})`,
       Hypotheses_Critiques: 'Stabilité institutionnelle, macroéconomique et maintien des engagements des partenaires.'
     })
   );
@@ -1301,7 +1382,7 @@ export function buildDefaultMatricesFromApp(
         'Taux_Realisation_%': `${axePct}%`,
         Source_Verification: 'Rapports CAP, Revue à Mi-Parcours & PV du Comité de Pilotage',
         Frequence_Collecte: 'Semestrielle',
-        Responsable_Collecte: raciCtx.cActors[0] || leadName,
+        Responsable_Collecte: formatPositionWithHolder(raciCtx.cActors[0] || leadName),
         Hypotheses_Critiques: 'Adhésion des parties prenantes et fluidité des arbitrages du COPIL.'
       })
     );
@@ -1322,7 +1403,7 @@ export function buildDefaultMatricesFromApp(
           'Taux_Realisation_%': '0%',
           Source_Verification: 'Bordereaux de réception, PV de validation et Tableau Kanban',
           Frequence_Collecte: 'Trimestrielle',
-          Responsable_Collecte: (pTasks[0]?.assignee || '').trim() || leadName,
+          Responsable_Collecte: formatPositionWithHolder((pTasks[0]?.assignee || '').trim() || leadName),
           Hypotheses_Critiques: 'Disponibilité à temps des intrants techniques et levée des blocages.'
         })
       );
@@ -1341,13 +1422,13 @@ export function buildDefaultMatricesFromApp(
       'Taux_Realisation_%': `${financialExecPct}%`,
       Source_Verification: 'États d’exécution PTBA, Comptabilité Projet & Réseau PERT',
       Frequence_Collecte: 'Mensuelle',
-      Responsable_Collecte: leadName,
+      Responsable_Collecte: formatPositionWithHolder(leadName),
       Hypotheses_Critiques: 'Décaissement régulier des tranches budgétaires sans rupture de trésorerie.'
     })
   );
 
-  // M4: Parties Prenantes, Engagement & Communication (synchronisé avec l'onglet Catégorie en 5 catégories & RACI)
-  raciCtx.categorizedActors.slice(0, 10).forEach((catActor, idx) => {
+  // M4: Parties Prenantes, Engagement & Communication (synchronisé à 100 % avec l'onglet Catégorie & l'onglet RACI)
+  raciCtx.categorizedActors.forEach((catActor, idx) => {
     const powerByCat =
       catActor.category === 'Interne' ||
       catActor.category === 'Partenaire Financier' ||
@@ -1377,11 +1458,14 @@ export function buildDefaultMatricesFromApp(
         ? 'Points d’Avancement Hebdomadaires & Bordereaux de Livrables'
         : 'Ateliers de Concertation & Enquêtes CAP Semestrielles';
 
+    const holderLabel = catActor.fullName ? ` — Titulaire : ${catActor.fullName}` : '';
+    const contactsLabel = [catActor.phone, catActor.email, catActor.address].filter(Boolean).join(' · ');
+
     m4Rows.push({
       Code_PP: `PP-${String(idx + 1).padStart(2, '0')}`,
-      Nom_Institution_Groupe: `${catActor.name} (${catActor.organization})`,
+      Nom_Institution_Groupe: `${catActor.name}${holderLabel} (${catActor.organization})`,
       Categorie_Acteur: catActor.category,
-      Role_Dans_Projet: `${catActor.roleOrFunction} [RACI: ${(catActor.raciRoles || ['R']).join('/')}]`,
+      Role_Dans_Projet: `${catActor.roleOrFunction} [RACI: ${(catActor.raciRoles || ['R']).join('/')} · ${catActor.governanceInstance || 'Opérationnel'}]${contactsLabel ? ` — Contacts : ${contactsLabel}` : ''}`,
       Niveau_Pouvoir_1_5: powerByCat,
       Niveau_Interet_1_5: '5',
       Attentes_Enjeux_Majeurs:
@@ -1419,7 +1503,7 @@ export function buildDefaultMatricesFromApp(
       Indicateur_Reponse: `Pourcentage de projets disposant de liens d’antécédence PERT/CPM et d’une gouvernance RACI harmonisée (100% sur ${pertSummaries.length} projet(s))`,
       Sources_Triangulation_3_Niveaux: '1. Doc : Matrices WBS & RACI | 2. Quantitatif : Réseau PERT | 3. Qualitatif : Focus groups avec chefs de projets',
       Methode_Outil_Collecte: 'Analyse structurelle du réseau PERT & Entretiens de coordination',
-      Cible_Repondants: Array.from(uniqueAssignees).join(', ') || leadName,
+      Cible_Repondants: formatPositionWithHolder(Array.from(uniqueAssignees).join(', ') || leadName),
       Score_1_a_5: '4',
       Appreciation_Normative: 'Satisfaisant'
     },
@@ -1432,7 +1516,7 @@ export function buildDefaultMatricesFromApp(
       Indicateur_Reponse: `Taux de réalisation physique global : ${progressPct}% (${completedTasks}/${totalTasks} activités terminées, ${inProgressTasks} en cours)`,
       Sources_Triangulation_3_Niveaux: '1. Doc : Rapports CAP & PV | 2. Quantitatif : Base de suivi Kanban | 3. Qualitatif : Visites de vérification terrain',
       Methode_Outil_Collecte: 'Audit physique contradictoire des livrables & Calcul des écarts Début/Fin',
-      Cible_Repondants: `Responsables RACI (R : ${Array.from(uniqueAssignees).join(', ') || leadName} ; A : ${Array.from(uniqueAuthorities).join(', ') || recipientRep})`,
+      Cible_Repondants: `Responsables RACI (R : ${formatPositionWithHolder(Array.from(uniqueAssignees).join(', ') || leadName)} ; A : ${formatPositionWithHolder(Array.from(uniqueAuthorities).join(', ') || recipientRep)})`,
       Score_1_a_5: effScore,
       Appreciation_Normative: Number(effScore) >= 4 ? 'Satisfaisant' : 'Moyen'
     },
@@ -1442,10 +1526,10 @@ export function buildDefaultMatricesFromApp(
       'Poids_Critere_%': '20%',
       Question_Evaluative_Principale: 'Les ressources financières, humaines et temporelles ont-elles été converties de manière optimale en résultats (analyse coût-efficacité) ?',
       Sous_Questions_Jugement: 'Adéquation entre décaissement et avancement physique ; Maîtrise des coûts unitaires ; Respect du chemin critique PERT.',
-      Indicateur_Reponse: `Exécution financière de ${financialExecPct}% sur ${formatCleanAmount(totalBudgetFCFA, currency, lang)} ; Chemin critique de ${maxDur}j (${blockedTasks} blocage(s))`,
+      Indicateur_Reponse: `Exécution financière de ${financialExecPct}% sur ${formatCleanAmount(totalBudgetFCFA, currency, lang)} (Valeur Acquise EV : ${formatCleanAmount(totalEarnedValueFCFA, currency, lang)}) ; Chemin critique de ${maxDur}j (${blockedTasks} blocage(s))`,
       Sources_Triangulation_3_Niveaux: '1. Doc : États financiers PTBA | 2. Quantitatif : Valeur Acquise (EVM / CPI) | 3. Qualitatif : Entretiens DAF & Auditeurs',
       Methode_Outil_Collecte: 'Audit budgétaire EVM (BAC, EV, AC, CPI) & Analyse des marges PERT',
-      Cible_Repondants: `Direction Financière & ${leadName}`,
+      Cible_Repondants: `Direction Financière & ${formatPositionWithHolder(leadName)}`,
       Score_1_a_5: efcScore,
       Appreciation_Normative: Number(efcScore) >= 4 ? 'Satisfaisant' : 'Moyen'
     },
@@ -1492,7 +1576,7 @@ export function buildDefaultMatricesFromApp(
         Criticite_PxI: '15',
         Strategie_Reponse: 'Atténuer',
         Plan_Action_Mitigation: 'Surveillance hebdomadaire prioritaire des nœuds critiques et réallocation des ressources depuis les tâches à marge libre',
-        Proprietaire_Risque: leadName,
+        Proprietaire_Risque: formatPositionWithHolder(leadName),
         Statut_RAID: delayedTasks > 0 ? 'Ouvert' : 'Sous contrôle'
       })
     );
@@ -1523,7 +1607,7 @@ export function buildDefaultMatricesFromApp(
         Recommandation_Prescription_Action: 'Maintenir une revue hebdomadaire dédiée aux tâches critiques et anticiper la mobilisation des experts RACI',
         Priorite: 'Critique / Urgente',
         Indicateur_Verif_Mise_En_Oeuvre: '0 jour de glissement calendaire sur le chemin critique PERT',
-        Responsable_Execution: leadName,
+        Responsable_Execution: formatPositionWithHolder(leadName),
         Echeance_Cible: todayISO,
         Budget_Additionnel_Requis: '0',
         Statut_Mise_En_Oeuvre: 'En cours'
@@ -1535,7 +1619,7 @@ export function buildDefaultMatricesFromApp(
         Recommandation_Prescription_Action: 'Coupler systématiquement la signature des PV de réception (Matrice M9) avec le déclenchement des paiements PTBA (Matrice M5)',
         Priorite: 'Haute',
         Indicateur_Verif_Mise_En_Oeuvre: 'Indice de performance des coûts (CPI) maintenu >= 1.00',
-        Responsable_Execution: `Direction Financière & ${recipientRep}`,
+        Responsable_Execution: `Direction Financière & ${formatPositionWithHolder(recipientRep)}`,
         Echeance_Cible: todayISO,
         Budget_Additionnel_Requis: '0',
         Statut_Mise_En_Oeuvre: 'En cours'
@@ -1558,9 +1642,10 @@ export function buildDefaultMatricesFromApp(
 }
 
 /**
- * Résout l'état complet des 10 matrices en fusionnant les données pré-remplies
- * en temps réel depuis les onglets Planification, Suivi des tâches et RACI du programme sélectionné
- * avec les éventuelles personnalisations spécifiques au programme.
+ * Résout l'état complet des 10 matrices en se basant impérativement sur les données en temps réel
+ * des onglets "Planification", "Suivi des risques", "RACI" et "Catégorie" du programme sélectionné,
+ * tout en appliquant uniquement les modifications de cellules explicites (_cellOverrides) sans jamais
+ * permettre l'ajout ou la suppression de lignes.
  */
 export function resolveActiveMatricesData(
   dossier: Dossier,
@@ -1575,12 +1660,28 @@ export function resolveActiveMatricesData(
   if (!rawJson) return defaults;
 
   try {
-    const parsed = JSON.parse(rawJson) as Partial<AllMatricesData>;
+    const parsed = JSON.parse(rawJson) as {
+      _cellOverrides?: Partial<Record<MasterMatrixId, Record<string, Record<string, string>>>>;
+    };
+    if (!parsed || !parsed._cellOverrides) {
+      return defaults;
+    }
+
     const merged: AllMatricesData = { ...defaults };
     (Object.keys(defaults) as MasterMatrixId[]).forEach(mId => {
-      const savedRows = parsed[mId];
-      if (Array.isArray(savedRows)) {
-        merged[mId] = savedRows.map(row => computeMatrixRowCalculations(mId, row));
+      const def = getMatrixDefinition(mId);
+      const firstColKey = def.columns[0]?.key || 'Code';
+      const matrixOverrides = parsed._cellOverrides?.[mId];
+      if (matrixOverrides) {
+        merged[mId] = defaults[mId].map((defaultRow, idx) => {
+          const rowKey = defaultRow[firstColKey] || `ROW_${idx}`;
+          const rowPatch = matrixOverrides[rowKey];
+          if (!rowPatch) return defaultRow;
+          return computeMatrixRowCalculations(mId, {
+            ...defaultRow,
+            ...rowPatch
+          });
+        });
       }
     });
     return merged;

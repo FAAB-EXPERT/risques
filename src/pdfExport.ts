@@ -658,10 +658,10 @@ export async function generateDirectWhitePDF(
   });
 
   // ==========================================================================
-  // DERNIÈRE PAGE : INTERPRÉTATION DYNAMIQUE DU RÉSEAU PERT & CHEMIN CRITIQUE
+  // DERNIÈRE PAGE : SYNTHÈSE CONDENSÉE DU RÉSEAU PERT (TÂCHES + BUDGÉTAIRE)
   // ==========================================================================
   doc.addPage();
-  const p8Subtitle = 'Interprétation Dynamique du Réseau PERT & Chemin Critique (CPM)';
+  const p8Subtitle = 'Synthèse Condensée du Réseau PERT (PERT des Tâches + PERT Budgétaire)';
   drawPageHeader(p8Subtitle);
 
   const pertInterpRows = pertSummaries.map(p => [
@@ -669,7 +669,7 @@ export async function generateDirectWhitePDF(
     cleanPdfText(`${p.projectDuration} jour(s)`),
     cleanPdfText(p.criticalPathCodes.join(' -> ') || '—'),
     cleanPdfText(
-      `${p.interpretation.criticalPathSummary}\n\n${p.interpretation.slackSummary}\n\n${p.interpretation.riskAndSteeringSummary}`
+      `[1. PERT DES TACHES]\n${p.interpretation.criticalPathSummary}\n${p.interpretation.slackSummary}\n${p.interpretation.riskAndSteeringSummary}\n\n[2. PERT BUDGETAIRE]\n${p.budgetInterpretation.criticalBudgetSummary}\n${p.budgetInterpretation.evmAndVarianceSummary}\n${p.budgetInterpretation.financialSteeringSummary}`
     )
   ]);
 
@@ -678,14 +678,21 @@ export async function generateDirectWhitePDF(
     margin: { top: 34, bottom: 16, left: marginX, right: marginX },
     tableWidth: usableWidth,
     rowPageBreak: 'avoid',
-    head: [['Projet Opérationnel', 'Durée Critique', 'Chemin Critique', 'Interprétation Dynamique & Recommandations']],
+    head: [
+      [
+        'Projet Opérationnel',
+        'Durée Critique',
+        'Chemin Critique',
+        'Synthèse Condensée (PERT des Tâches & PERT Budgétaire)'
+      ]
+    ],
     body: pertInterpRows,
     theme: 'grid',
     styles: {
       fillColor: [255, 255, 255],
       textColor: [15, 23, 42],
-      fontSize: 7.8,
-      cellPadding: 2.8,
+      fontSize: 7.4,
+      cellPadding: 2.5,
       overflow: 'linebreak'
     },
     columnStyles: {
@@ -697,7 +704,7 @@ export async function generateDirectWhitePDF(
     headStyles: {
       fillColor: [12, 74, 110],
       textColor: [255, 255, 255],
-      fontSize: 8.2,
+      fontSize: 8.0,
       fontStyle: 'bold',
       overflow: 'linebreak'
     },

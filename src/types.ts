@@ -212,6 +212,9 @@ export interface Task {
   budget?: number; // Stored in base FCFA
   dateDecaissement?: string;
   montantDecaissement?: number; // Stored in base FCFA
+  valeurAcquise?: number; // Valeur Acquise (EV) en FCFA
+  coutReel?: number; // Coût Réel (AC) en FCFA
+  progresBudget?: number; // Progrès Budget (%)
   validated?: boolean;
   antecedent?: string;
   projectName?: string;
@@ -234,8 +237,10 @@ export interface Task {
   faiblesse?: string;
   probabilite?: 'improbable' | 'peu probable' | 'probable' | 'très probable' | string;
   gravite?: 'mineur' | 'majeur' | 'grave' | 'catastrophique' | string;
-  criticite?: 'modéré' | 'critique' | 'tres critique' | string;
+  criticite?: 'faible' | 'modéré' | 'critique' | 'tres critique' | string;
   consequence?: 'cout' | 'délai' | 'qualité' | string;
+  gestionnaireRisque?: string;
+  decideurProprietaire?: string;
   tendance?: 'stable' | 'hausse' | 'baisse' | string;
   actionPreventive?: string;
   actionCorrective?: string;
@@ -256,7 +261,18 @@ export interface PertNode {
   projectId: string;
   projectName: string;
   assignee: string;
+  bailleur?: string;
+  livrable?: string;
   budget: number;
+  montantDecaissement: number;
+  valeurAcquise: number;
+  coutReel: number;
+  progresBudget: number;
+  ecartCout: number;
+  tauxDecaissement: number;
+  cpi: number;
+  cumBudgetES: number;
+  isBudgetCritical: boolean;
   startDate: string;
   endDate: string;
   actualStartDate?: string;
@@ -319,10 +335,10 @@ export const ACTOR_CATEGORIES_ORDERED: ActorCategoryDefinition[] = [
   {
     id: 'Bénéficiaires',
     order: 1,
-    labelFr: '1. Bénéficiaires',
-    labelEn: '1. Beneficiaries',
-    shortBadgeFr: 'Bénéficiaires',
-    shortBadgeEn: 'Beneficiaries',
+    labelFr: 'Bénéficiaire',
+    labelEn: 'Beneficiary',
+    shortBadgeFr: 'Bénéficiaire',
+    shortBadgeEn: 'Beneficiary',
     definitionFr:
       'Acteurs, populations cibles ou entités qui bénéficient directement ou indirectement des résultats et extrants du projet/programme.',
     definitionEn:
@@ -332,8 +348,8 @@ export const ACTOR_CATEGORIES_ORDERED: ActorCategoryDefinition[] = [
   {
     id: 'Interne',
     order: 2,
-    labelFr: '2. Interne',
-    labelEn: '2. Internal (UGP / Pilot)',
+    labelFr: 'Interne',
+    labelEn: 'Internal (UGP / Pilot)',
     shortBadgeFr: 'Interne (Pilote / UGP)',
     shortBadgeEn: 'Internal (Pilot / PMU)',
     definitionFr:
@@ -345,8 +361,8 @@ export const ACTOR_CATEGORIES_ORDERED: ActorCategoryDefinition[] = [
   {
     id: 'Externe',
     order: 3,
-    labelFr: '3. Externe',
-    labelEn: '3. External (State / Regulator)',
+    labelFr: 'Externe',
+    labelEn: 'External (State / Regulator)',
     shortBadgeFr: 'Externe (Tutelle / Contrôle)',
     shortBadgeEn: 'External (Ministry / Control)',
     definitionFr:
@@ -358,8 +374,8 @@ export const ACTOR_CATEGORIES_ORDERED: ActorCategoryDefinition[] = [
   {
     id: 'Prestataire',
     order: 4,
-    labelFr: '4. Prestataire',
-    labelEn: '4. Contractor / Provider',
+    labelFr: 'Prestataire',
+    labelEn: 'Contractor / Provider',
     shortBadgeFr: 'Prestataire (Marché / Contrat)',
     shortBadgeEn: 'Contractor (Public Contract)',
     definitionFr:
@@ -371,8 +387,8 @@ export const ACTOR_CATEGORIES_ORDERED: ActorCategoryDefinition[] = [
   {
     id: 'Partenaire Financier',
     order: 5,
-    labelFr: '5. Partenaire Financier',
-    labelEn: '5. Financial Partner (Donor)',
+    labelFr: 'Partenaire Financier',
+    labelEn: 'Financial Partner (Donor)',
     shortBadgeFr: 'Partenaire Financier (Bailleur)',
     shortBadgeEn: 'Financial Partner (Donor)',
     definitionFr:
@@ -392,6 +408,7 @@ export type ActorGovernanceInstance =
 export interface CategorizedActor {
   id: string;
   name: string;
+  fullName?: string; // Nom & Prénoms du titulaire du poste (renseigné dans l'onglet Catégorie)
   category: ActorCategoryType;
   dossierId: string;
   axeId: string; // 'ALL' or specific Axe ID

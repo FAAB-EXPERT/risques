@@ -341,11 +341,27 @@ export interface ProjectPertResult {
   blockedCriticalNodes: PertNode[];
   delayedCriticalNodes: PertNode[];
   slackNodes: PertNode[];
+  totalBudget: number;
+  criticalPathBudget: number;
+  nonCriticalBudget: number;
+  totalDisbursed: number;
+  totalEarnedValue: number;
+  totalActualCost: number;
+  costVariance: number;
+  cpi: number;
+  disbursementRate: number;
+  earnedValueRate: number;
   interpretation: {
     criticalPathSummary: string;
     slackSummary: string;
     riskAndSteeringSummary: string;
   };
+  budgetInterpretation: {
+    criticalBudgetSummary: string;
+    evmAndVarianceSummary: string;
+    financialSteeringSummary: string;
+  };
+  condensedReportSummary: string;
 }
 
 export function computePertForProject(
@@ -409,6 +425,29 @@ export function computePertForProject(
     const antCode = hasValidAnt ? codeById.get(task.antecedent!)! : '—';
     const chain = getPrecedingChain(task.id);
 
+    const budget = Number(task.budget) || 0;
+    const montantDecaissement =
+      task.montantDecaissement !== undefined ? Number(task.montantDecaissement) : budget;
+    const progresBudget =
+      task.progresBudget !== undefined
+        ? Number(task.progresBudget)
+        : task.valeurAcquise !== undefined && budget > 0
+        ? Math.round((Number(task.valeurAcquise) / budget) * 100)
+        : metrics.effectiveStatus === 'Terminé'
+        ? 100
+        : metrics.effectiveStatus === 'En cours'
+        ? 50
+        : 0;
+    const valeurAcquise =
+      task.valeurAcquise !== undefined
+        ? Number(task.valeurAcquise)
+        : Math.round((budget * progresBudget) / 100);
+    const coutReel =
+      task.coutReel !== undefined ? Number(task.coutReel) : montantDecaissement;
+    const ecartCout = valeurAcquise - coutReel;
+    const tauxDecaissement = budget > 0 ? Math.round((montantDecaissement / budget) * 100) : 0;
+    const cpi = coutReel > 0 ? Number((valeurAcquise / coutReel).toFixed(2)) : 1;
+
     return {
       id: task.id,
       code,
@@ -421,7 +460,18 @@ export function computePertForProject(
       projectId: project.id,
       projectName: project.name,
       assignee: task.assignee || '—',
-      budget: Number(task.budget) || 0,
+      bailleur: task.bailleur || '—',
+      livrable: task.livrable || '—',
+      budget,
+      montantDecaissement,
+      valeurAcquise,
+      coutReel,
+      progresBudget,
+      ecartCout,
+      tauxDecaissement,
+      cpi,
+      cumBudgetES: budget,
+      isBudgetCritical: false,
       startDate: task.startDate,
       endDate: task.endDate,
       actualStartDate: task.actualStartDate,
@@ -456,14 +506,16 @@ export function computePertForProject(
     }
   });
 
-  // Forward Pass (ES, EF) sorted by level
+  // Forward Pass (ES, EF & Cumulative Budget along predecessor chain) sorted by level
   const sortedByLevel = [...nodes].sort((a, b) => a.level - b.level);
   sortedByLevel.forEach(n => {
     if (n.antecedentId !== '—' && nodeMap.has(n.antecedentId)) {
       const pred = nodeMap.get(n.antecedentId)!;
       n.es = pred.ef;
+      n.cumBudgetES = pred.cumBudgetES + n.budget;
     } else {
       n.es = 0;
+      n.cumBudgetES = n.budget;
     }
     n.ef = n.es + n.duration;
   });
@@ -483,6 +535,7 @@ export function computePertForProject(
     n.totalFloat = Math.max(0, n.ls - n.es);
     n.freeFloat = succs.length > 0 ? Math.max(0, Math.min(...succs.map(s => s.es)) - n.ef) : n.totalFloat;
     n.isCritical = n.totalFloat === 0;
+    n.isBudgetCritical = n.isCritical || n.ecartCout < 0 || n.coutReel > n.budget;
   });
 
   const criticalPathNodes = sortedByLevel.filter(n => n.isCritical);
@@ -490,6 +543,19 @@ export function computePertForProject(
   const blockedCriticalNodes = criticalPathNodes.filter(n => n.status === 'Bloqué');
   const delayedCriticalNodes = criticalPathNodes.filter(n => n.endDelayDays > 0 || n.startDelayDays > 0);
   const slackNodes = nodes.filter(n => n.totalFloat > 0);
+
+  // Project-level Budgetary PERT metrics
+  const totalBudget = nodes.reduce((s, n) => s + n.budget, 0);
+  const criticalPathBudget = criticalPathNodes.reduce((s, n) => s + n.budget, 0);
+  const nonCriticalBudget = Math.max(0, totalBudget - criticalPathBudget);
+  const totalDisbursed = nodes.reduce((s, n) => s + n.montantDecaissement, 0);
+  const totalEarnedValue = nodes.reduce((s, n) => s + n.valeurAcquise, 0);
+  const totalActualCost = nodes.reduce((s, n) => s + n.coutReel, 0);
+  const costVariance = totalEarnedValue - totalActualCost;
+  const cpi = totalActualCost > 0 ? Number((totalEarnedValue / totalActualCost).toFixed(2)) : 1;
+  const disbursementRate = totalBudget > 0 ? Math.round((totalDisbursed / totalBudget) * 100) : 0;
+  const earnedValueRate = totalBudget > 0 ? Math.round((totalEarnedValue / totalBudget) * 100) : 0;
+  const critBudgetPct = totalBudget > 0 ? Math.round((criticalPathBudget / totalBudget) * 100) : 0;
 
   const maxSlipDays = delayedCriticalNodes.length > 0
     ? Math.max(...delayedCriticalNodes.map(n => Math.max(n.endDelayDays, n.startDelayDays)))
@@ -522,6 +588,28 @@ export function computePertForProject(
       ? `CONTROLLED TRAJECTORY: No blockage or critical overrun detected on the critical path. The planned schedule of ${projectDuration} day(s) is on track.`
       : `TRAJECTOIRE MAÎTRISÉE : Aucun blocage ni dépassement critique n’est constaté sur le chemin critique. Le calendrier prévisionnel de ${projectDuration} jour(s) est respecté.`;
 
+  const criticalBudgetSummary = isEn
+    ? `BUDGETARY PERT EXPOSURE: Out of a total planned budget of ${totalBudget.toLocaleString('en-US')} FCFA, ${criticalPathBudget.toLocaleString('en-US')} FCFA (${critBudgetPct}%) is concentrated on the critical path (${criticalPathCodes.join(' → ') || 'N/A'}) and ${nonCriticalBudget.toLocaleString('en-US')} FCFA on flexible tasks.`
+    : `EXPOSITION PERT BUDGÉTAIRE : Sur un budget prévisionnel total de ${totalBudget.toLocaleString('fr-FR')} FCFA, ${criticalPathBudget.toLocaleString('fr-FR')} FCFA (${critBudgetPct}%) sont concentrés sur le chemin critique (${criticalPathCodes.join(' → ') || 'N/A'}) et ${nonCriticalBudget.toLocaleString('fr-FR')} FCFA sur les tâches à marge positive.`;
+
+  const evmAndVarianceSummary = isEn
+    ? `EARNED VALUE (EVM) & DISBURSEMENT: Disbursed = ${totalDisbursed.toLocaleString('en-US')} FCFA (${disbursementRate}%) · Earned Value (EV) = ${totalEarnedValue.toLocaleString('en-US')} FCFA (${earnedValueRate}%) · Actual Cost (AC) = ${totalActualCost.toLocaleString('en-US')} FCFA · Cost Variance (CV = EV - AC) = ${costVariance >= 0 ? '+' : ''}${costVariance.toLocaleString('en-US')} FCFA (CPI = ${cpi}).`
+    : `VALEUR ACQUISE (EVM) & DÉCAISSEMENT : Décaissé = ${totalDisbursed.toLocaleString('fr-FR')} FCFA (${disbursementRate}%) · Valeur Acquise (VA) = ${totalEarnedValue.toLocaleString('fr-FR')} FCFA (${earnedValueRate}%) · Coût Réel (CR) = ${totalActualCost.toLocaleString('fr-FR')} FCFA · Écart de Coût (EC = VA - CR) = ${costVariance >= 0 ? '+' : ''}${costVariance.toLocaleString('fr-FR')} FCFA (Indice CPI = ${cpi}).`;
+
+  const overrunNodes = nodes.filter(n => n.ecartCout < 0);
+  const financialSteeringSummary =
+    overrunNodes.length > 0 || costVariance < 0
+      ? isEn
+        ? `BUDGETARY STEERING ALERT: ${overrunNodes.length} activity item(s) (${overrunNodes.map(o => o.code).join(', ')}) show a negative cost variance (Actual Cost > Earned Value). Prioritise financial control on critical path disbursements.`
+        : `ALERTE DE PILOTAGE BUDGÉTAIRE : ${overrunNodes.length} activité(s) (${overrunNodes.map(o => o.code).join(', ')}) présentent un écart de coût défavorable (Coût Réel > Valeur Acquise). Renforcer le contrôle fiduciaire sur les décaissements du chemin critique.`
+      : isEn
+      ? `CONTROLLED FINANCIAL TRAJECTORY: Earned value matches or exceeds actual costs (CPI = ${cpi} >= 1). Budget execution is aligned with technical progress.`
+      : `TRAJECTOIRE FINANCIÈRE MAÎTRISÉE : La valeur acquise couvre les coûts réels engagés (CPI = ${cpi} >= 1). L’exécution budgétaire est alignée sur l’avancement physique du réseau PERT.`;
+
+  const condensedReportSummary = isEn
+    ? `[1. TASK PERT] Critical Path: ${criticalPathCodes.join(' → ') || 'N/A'} (${projectDuration}d, ${slackNodes.length} flexible task(s)). ${riskAndSteeringSummary}\n[2. BUDGETARY PERT] Total Budget: ${totalBudget.toLocaleString('en-US')} FCFA (Critical Path: ${critBudgetPct}%) | Disbursed: ${totalDisbursed.toLocaleString('en-US')} FCFA (${disbursementRate}%) | Earned Value: ${totalEarnedValue.toLocaleString('en-US')} FCFA (${earnedValueRate}%) | Actual Cost: ${totalActualCost.toLocaleString('en-US')} FCFA | Cost Variance: ${costVariance >= 0 ? '+' : ''}${costVariance.toLocaleString('en-US')} FCFA (CPI: ${cpi}). ${financialSteeringSummary}`
+    : `[1. PERT DES TÂCHES] Chemin Critique : ${criticalPathCodes.join(' → ') || 'N/A'} (${projectDuration}j, ${slackNodes.length} tâche(s) à marge souple). ${riskAndSteeringSummary}\n[2. PERT BUDGÉTAIRE] Budget Prévu : ${totalBudget.toLocaleString('fr-FR')} FCFA (dont ${critBudgetPct}% sur chemin critique) | Décaissement : ${totalDisbursed.toLocaleString('fr-FR')} FCFA (${disbursementRate}%) | Valeur Acquise : ${totalEarnedValue.toLocaleString('fr-FR')} FCFA (${earnedValueRate}%) | Coût Réel : ${totalActualCost.toLocaleString('fr-FR')} FCFA | Écart Coût (VA-CR) : ${costVariance >= 0 ? '+' : ''}${costVariance.toLocaleString('fr-FR')} FCFA (CPI : ${cpi}). ${financialSteeringSummary}`;
+
   return {
     projectId: project.id,
     projectName: project.name,
@@ -532,11 +620,27 @@ export function computePertForProject(
     blockedCriticalNodes,
     delayedCriticalNodes,
     slackNodes,
+    totalBudget,
+    criticalPathBudget,
+    nonCriticalBudget,
+    totalDisbursed,
+    totalEarnedValue,
+    totalActualCost,
+    costVariance,
+    cpi,
+    disbursementRate,
+    earnedValueRate,
     interpretation: {
       criticalPathSummary,
       slackSummary,
       riskAndSteeringSummary
-    }
+    },
+    budgetInterpretation: {
+      criticalBudgetSummary,
+      evmAndVarianceSummary,
+      financialSteeringSummary
+    },
+    condensedReportSummary
   };
 }
 

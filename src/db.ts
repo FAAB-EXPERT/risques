@@ -489,11 +489,11 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '2026-01-12',
                 actualEndDate: '2026-02-25',
                 status: 'Terminé',
-                assignee: 'KOFFIE Fabien Michael, Kouassi Marc',
-                autorite: 'Ministère de Tutelle & COPIL',
-                consulte: 'Collectif des Bénéficiaires & Usagers Finaux',
-                informe: 'Banque Mondiale & Partenaires Financiers (PTF)',
-                responsabilite: 'Architecte Urbaniste SI',
+                assignee: 'Coordonnateur Général PMO, Architecte Urbaniste SI & Lead Technique',
+                autorite: 'Président du Comité de Pilotage (COPIL / Tutelle)',
+                consulte: 'Représentant du Collectif des Bénéficiaires',
+                informe: 'Chargé de Programme Bailleur (TTL / PTF)',
+                responsabilite: 'Architecte Urbaniste SI & Lead Technique',
                 livrable: 'Schéma directeur & Rapport d’audit',
                 budget: 18500000,
                 validated: true,
@@ -509,11 +509,11 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '2026-03-05',
                 actualEndDate: '2026-03-05',
                 status: 'Terminé',
-                assignee: 'KOFFIE Fabien Michael',
-                autorite: 'Ministère de Tutelle & COPIL',
-                consulte: 'Banque Mondiale & Partenaires Financiers (PTF)',
-                informe: 'Collectif des Bénéficiaires & Usagers Finaux',
-                responsabilite: 'Président COPIL',
+                assignee: 'Coordonnateur Général PMO',
+                autorite: 'Président du Comité de Pilotage (COPIL / Tutelle)',
+                consulte: 'Chargé de Programme Bailleur (TTL / PTF)',
+                informe: 'Représentant du Collectif des Bénéficiaires',
+                responsabilite: 'Président du Comité de Pilotage (COPIL / Tutelle)',
                 livrable: 'PV de validation signé',
                 budget: 2500000,
                 validated: true,
@@ -529,10 +529,10 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '2026-03-14',
                 actualEndDate: '2026-05-18',
                 status: 'Terminé',
-                assignee: 'Consortium Tech & Cabinet Ingénierie (Prestataire), Kouassi Marc',
-                autorite: 'KOFFIE Fabien Michael',
-                consulte: 'Collectif des Bénéficiaires & Usagers Finaux',
-                informe: 'Ministère de Tutelle & COPIL',
+                assignee: 'Chef de Mission Prestataire SI & Cloud, Architecte Urbaniste SI & Lead Technique',
+                autorite: 'Coordonnateur Général PMO',
+                consulte: 'Représentant du Collectif des Bénéficiaires',
+                informe: 'Président du Comité de Pilotage (COPIL / Tutelle)',
                 responsabilite: 'Lead Product Designer',
                 livrable: 'Dossier de spécifications détaillées',
                 budget: 24000000,
@@ -549,10 +549,10 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '2026-05-25',
                 actualEndDate: '',
                 status: 'En cours',
-                assignee: 'Consortium Tech & Cabinet Ingénierie (Prestataire)',
-                autorite: 'KOFFIE Fabien Michael',
-                consulte: 'Autorité Nationale de Régulation & Contrôle',
-                informe: 'Banque Mondiale & Partenaires Financiers (PTF)',
+                assignee: 'Chef de Mission Prestataire SI & Cloud',
+                autorite: 'Coordonnateur Général PMO',
+                consulte: 'Directeur de la Régulation & du Contrôle',
+                informe: 'Chargé de Programme Bailleur (TTL / PTF)',
                 responsabilite: 'Ingénieur DevOps Senior',
                 livrable: 'Cluster Cloud Haute Disponibilité',
                 budget: 42000000,
@@ -570,10 +570,10 @@ export const initialDossiers: Dossier[] = [
                 actualEndDate: '',
                 status: 'Bloqué',
                 manualBlocked: true,
-                assignee: 'Kouassi Marc, Cellule Data & Sécurité UGP',
-                autorite: 'KOFFIE Fabien Michael',
-                consulte: 'Autorité Nationale de Régulation & Contrôle',
-                informe: 'Ministère de Tutelle & COPIL',
+                assignee: 'Architecte Urbaniste SI & Lead Technique, Responsable Ingénierie Data & Cybersécurité (RSSI)',
+                autorite: 'Coordonnateur Général PMO',
+                consulte: 'Directeur de la Régulation & du Contrôle',
+                informe: 'Président du Comité de Pilotage (COPIL / Tutelle)',
                 responsabilite: 'Ingénieur Data',
                 livrable: 'Passerelles API & Données migrées',
                 budget: 31000000,
@@ -590,10 +590,10 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '',
                 actualEndDate: '',
                 status: 'À faire',
-                assignee: 'Cellule Data & Sécurité UGP',
-                autorite: 'Autorité Nationale de Régulation & Contrôle',
-                consulte: 'Collectif des Bénéficiaires & Usagers Finaux',
-                informe: 'Banque Mondiale & Partenaires Financiers (PTF)',
+                assignee: 'Responsable Ingénierie Data & Cybersécurité (RSSI)',
+                autorite: 'Directeur de la Régulation & du Contrôle',
+                consulte: 'Représentant du Collectif des Bénéficiaires',
+                informe: 'Chargé de Programme Bailleur (TTL / PTF)',
                 responsabilite: 'Responsable QA / RSSI',
                 livrable: 'Certificat d’homologation sécurité',
                 budget: 19500000,
@@ -610,10 +610,10 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '',
                 actualEndDate: '',
                 status: 'À faire',
-                assignee: 'KOFFIE Fabien Michael',
-                autorite: 'Ministère de Tutelle & COPIL',
-                consulte: 'Banque Mondiale & Partenaires Financiers (PTF)',
-                informe: 'Collectif des Bénéficiaires & Usagers Finaux',
+                assignee: 'Coordonnateur Général PMO',
+                autorite: 'Président du Comité de Pilotage (COPIL / Tutelle)',
+                consulte: 'Chargé de Programme Bailleur (TTL / PTF)',
+                informe: 'Représentant du Collectif des Bénéficiaires',
                 responsabilite: 'Directeur de Projet',
                 livrable: 'PV de réception définitive',
                 budget: 8500000,
@@ -636,10 +636,10 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '2026-02-03',
                 actualEndDate: '2026-03-28',
                 status: 'Terminé',
-                assignee: 'Bamba Aminata (DRH UGP)',
-                autorite: 'KOFFIE Fabien Michael',
-                consulte: 'Collectif des Bénéficiaires & Usagers Finaux',
-                informe: 'Ministère de Tutelle & COPIL',
+                assignee: 'Directeur des Ressources Humaines (DRH UGP)',
+                autorite: 'Coordonnateur Général PMO',
+                consulte: 'Représentant du Collectif des Bénéficiaires',
+                informe: 'Président du Comité de Pilotage (COPIL / Tutelle)',
                 responsabilite: 'Responsable Formation',
                 livrable: 'Plan directeur de formation',
                 budget: 12000000,
@@ -656,11 +656,11 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '2026-04-15',
                 actualEndDate: '',
                 status: 'En cours',
-                assignee: 'Cabinet Partenaire & Formateurs (Prestataire)',
-                autorite: 'Bamba Aminata (DRH UGP)',
-                consulte: 'KOFFIE Fabien Michael',
-                informe: 'Banque Mondiale & Partenaires Financiers (PTF), Collectif des Bénéficiaires & Usagers Finaux',
-                responsabilite: 'Expert Formateur PMP/GAR',
+                assignee: 'Consultant Formateur Principal PMP / GAR',
+                autorite: 'Directeur des Ressources Humaines (DRH UGP)',
+                consulte: 'Coordonnateur Général PMO',
+                informe: 'Chargé de Programme Bailleur (TTL / PTF), Représentant du Collectif des Bénéficiaires',
+                responsabilite: 'Consultant Formateur Principal PMP / GAR',
                 livrable: '120 cadres et chefs de projets certifiés',
                 budget: 26500000,
                 validated: false,
@@ -688,10 +688,10 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '2026-01-15',
                 actualEndDate: '2026-03-14',
                 status: 'Terminé',
-                assignee: 'Cellule Data & Sécurité UGP',
-                autorite: 'KOFFIE Fabien Michael',
-                consulte: 'Autorité Nationale de Régulation & Contrôle',
-                informe: 'Ministère de Tutelle & COPIL',
+                assignee: 'Responsable Ingénierie Data & Cybersécurité (RSSI)',
+                autorite: 'Coordonnateur Général PMO',
+                consulte: 'Directeur de la Régulation & du Contrôle',
+                informe: 'Président du Comité de Pilotage (COPIL / Tutelle)',
                 responsabilite: 'Auditeur Qualité Principal',
                 livrable: 'Rapport de diagnostic qualité',
                 budget: 15000000,
@@ -708,10 +708,10 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '2026-03-25',
                 actualEndDate: '',
                 status: 'En cours',
-                assignee: 'KOFFIE Fabien Michael, Bamba Aminata (DRH UGP)',
-                autorite: 'Ministère de Tutelle & COPIL',
-                consulte: 'Banque Mondiale & Partenaires Financiers (PTF)',
-                informe: 'Collectif des Bénéficiaires & Usagers Finaux',
+                assignee: 'Coordonnateur Général PMO, Directeur des Ressources Humaines (DRH UGP)',
+                autorite: 'Président du Comité de Pilotage (COPIL / Tutelle)',
+                consulte: 'Chargé de Programme Bailleur (TTL / PTF)',
+                informe: 'Représentant du Collectif des Bénéficiaires',
                 responsabilite: 'Responsable Management Qualité',
                 livrable: 'Référentiel des procédures validé',
                 budget: 21000000,
@@ -753,11 +753,11 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '2025-03-04',
                 actualEndDate: '2025-05-28',
                 status: 'Terminé',
-                assignee: 'Commission des Marchés UGP, KOFFIE Fabien Michael',
-                autorite: 'Ministère de Tutelle & COPIL',
-                consulte: 'Banque Mondiale & Partenaires Financiers (PTF)',
-                informe: 'Collectif des Bénéficiaires & Usagers Finaux',
-                responsabilite: 'Spécialiste Passation des Marchés',
+                assignee: 'Spécialiste Passation des Marchés (SPM), Coordonnateur Général PMO',
+                autorite: 'Président du Comité de Pilotage (COPIL / Tutelle)',
+                consulte: 'Chargé de Programme Bailleur (TTL / PTF)',
+                informe: 'Représentant du Collectif des Bénéficiaires',
+                responsabilite: 'Spécialiste Passation des Marchés (SPM)',
                 livrable: 'Contrats attribués et notifiés',
                 budget: 35000000,
                 validated: true,
@@ -773,10 +773,10 @@ export const initialDossiers: Dossier[] = [
                 actualStartDate: '2025-11-15',
                 actualEndDate: '2025-11-15',
                 status: 'Terminé',
-                assignee: 'Consortium Tech & Cabinet Ingénierie (Prestataire)',
-                autorite: 'KOFFIE Fabien Michael',
-                consulte: 'Autorité Nationale de Régulation & Contrôle',
-                informe: 'Collectif des Bénéficiaires & Usagers Finaux',
+                assignee: 'Chef de Mission Prestataire SI & Cloud',
+                autorite: 'Coordonnateur Général PMO',
+                consulte: 'Directeur de la Régulation & du Contrôle',
+                informe: 'Représentant du Collectif des Bénéficiaires',
                 responsabilite: 'Chef de Service Logistique',
                 livrable: 'Procès-verbal de réception',
                 budget: 14000000,
@@ -790,6 +790,90 @@ export const initialDossiers: Dossier[] = [
     ]
   }
 ];
+
+/**
+ * Convertit tout nom de personne historique vers l'intitulé de Poste / Fonction correspondant
+ * afin que la matrice RACI et l'onglet Catégorie manipulent exclusivement des Postes (Fonctions).
+ */
+export function normalizeRaciActorToPosition(rawName: string): string {
+  const trimmed = (rawName || '').trim();
+  if (!trimmed) return '';
+
+  // Si la chaîne contient un poste suivi d'un nom entre parenthèses ex: "Coordonnateur Général PMO (KOFFIE Fabien Michael)", extraire uniquement le poste
+  const parenMatch = trimmed.match(/^(.+?)\s*\(([^)]+)\)$/);
+  if (parenMatch) {
+    const innerLow = parenMatch[2].trim().toLowerCase();
+    if (
+      /koffie|fabien|kouassi|bamba|aminata|kon[eé]\s+seydou|guessan|ahoua|kouadio|jean-baptiste|tour[eé]\s+souleymane|diallo\s+ibrahim|yao\s+kouam|lef[eè]vre|marc-antoine|soro\s+adama/.test(
+        innerLow
+      )
+    ) {
+      return normalizeRaciActorToPosition(parenMatch[1].trim());
+    }
+  }
+
+  const low = trimmed
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const legacyNameToPosition: Record<string, string> = {
+    'koffie fabien michael': 'Coordonnateur Général PMO',
+    'koffie fabien': 'Coordonnateur Général PMO',
+    'fabien koffie': 'Coordonnateur Général PMO',
+    'kouassi marc': 'Architecte Urbaniste SI & Lead Technique',
+    'bamba aminata (drh ugp)': 'Directeur des Ressources Humaines (DRH UGP)',
+    'bamba aminata': 'Directeur des Ressources Humaines (DRH UGP)',
+    'koné seydou': 'Responsable Ingénierie Data & Cybersécurité (RSSI)',
+    'kone seydou': 'Responsable Ingénierie Data & Cybersécurité (RSSI)',
+    'cellule data & sécurité ugp': 'Responsable Ingénierie Data & Cybersécurité (RSSI)',
+    'n’guessan ahoua': 'Spécialiste Passation des Marchés (SPM)',
+    "n'guessan ahoua": 'Spécialiste Passation des Marchés (SPM)',
+    'commission des marchés ugp': 'Spécialiste Passation des Marchés (SPM)',
+    'dr. kouadio jean-baptiste': 'Président du Comité de Pilotage (COPIL / Tutelle)',
+    'kouadio jean-baptiste': 'Président du Comité de Pilotage (COPIL / Tutelle)',
+    'ministère de tutelle & copil': 'Président du Comité de Pilotage (COPIL / Tutelle)',
+    'touré souleymane': 'Directeur de la Régulation & du Contrôle',
+    'toure souleymane': 'Directeur de la Régulation & du Contrôle',
+    'autorité nationale de régulation & contrôle': 'Directeur de la Régulation & du Contrôle',
+    'diallo ibrahim': 'Chef de Mission Prestataire SI & Cloud',
+    'consortium tech & cabinet ingénierie (prestataire)': 'Chef de Mission Prestataire SI & Cloud',
+    'yao kouamé': 'Consultant Formateur Principal PMP / GAR',
+    'yao kouame': 'Consultant Formateur Principal PMP / GAR',
+    'cabinet partenaire & formateurs (prestataire)': 'Consultant Formateur Principal PMP / GAR',
+    'lefèvre marc-antoine': 'Chargé de Programme Bailleur (TTL / PTF)',
+    'lefevre marc-antoine': 'Chargé de Programme Bailleur (TTL / PTF)',
+    'banque mondiale & partenaires financiers (ptf)': 'Chargé de Programme Bailleur (TTL / PTF)',
+    'soro adama': 'Représentant du Collectif des Bénéficiaires',
+    'collectif des bénéficiaires & usagers finaux': 'Représentant du Collectif des Bénéficiaires'
+  };
+
+  if (legacyNameToPosition[low]) {
+    return legacyNameToPosition[low];
+  }
+
+  if (low.includes('koffie') && low.includes('fabien')) {
+    return 'Coordonnateur Général PMO';
+  }
+  if (low.includes('kouassi') && low.includes('marc')) {
+    return 'Architecte Urbaniste SI & Lead Technique';
+  }
+  if (low.includes('bamba') && low.includes('aminata')) {
+    return 'Directeur des Ressources Humaines (DRH UGP)';
+  }
+
+  return trimmed;
+}
+
+export function normalizeRaciFieldList(raw?: string): string {
+  if (!raw) return '';
+  const parts = raw
+    .split(',')
+    .map(p => normalizeRaciActorToPosition(p))
+    .filter(Boolean);
+  const unique = Array.from(new Set(parts));
+  return unique.join(', ');
+}
 
 /**
  * Déduit automatiquement la catégorie métier parmi les 5 catégories obligatoires :
@@ -824,7 +908,7 @@ export function inferActorCategory(
 
   // 5. Partenaire Financier
   if (
-    /bailleur|banque mondiale|bm\b|ida\b|bird\b|bad\b|banque africaine|union européenne|\bue\b|pnud|undp|afd\b|kfw|giz|fida|unicef|fmi|bid\b|boad|partenaire financier|partenaires financiers|ptf\b|fonds/.test(
+    /bailleur|banque mondiale|bm\b|ida\b|bird\b|bad\b|banque africaine|union européenne|\bue\b|pnud|undp|afd\b|kfw|giz|fida|unicef|fmi|bid\b|boad|partenaire financier|partenaires financiers|ptf\b|ttl\b|fonds/.test(
       clean
     )
   ) {
@@ -857,39 +941,43 @@ const SEED_ACTOR_DETAILS: Record<
   string,
   Partial<CategorizedActor>
 > = {
-  'koffie fabien michael': {
+  'coordonnateur général pmo': {
+    fullName: 'KOFFIE Fabien Michael',
     category: 'Interne',
     roleOrFunction: 'Coordonnateur Général & Architecte du Pilotage Stratégique (PMO / GAR)',
     organization: 'Direction Générale de la Stratégie & Pilotage des Projets (UGP)',
     department: 'Coordination Générale & Unité de Gestion (UGP / PMO)',
-    email: 'fabien.frikupgeneration@gmail.com',
+    email: 'coordonnateur.pmo@ugp-programme.ci',
     phone: '+225 07 48 08 27 39',
     address: 'Siège UGP — Plateau, Abidjan, Côte d’Ivoire',
     governanceInstance: 'COPIL & COPROJ'
   },
-  'kouassi marc': {
+  'architecte urbaniste si & lead technique': {
+    fullName: 'KOUASSI Marc',
     category: 'Interne',
     roleOrFunction: 'Architecte Urbaniste SI & Lead Technique UGP',
     organization: 'Direction Générale de la Stratégie & Pilotage des Projets (UGP)',
     department: 'Direction Technique & Architecture Numérique',
-    email: 'marc.kouassi@ugp-programme.ci',
+    email: 'architecte.si@ugp-programme.ci',
     phone: '+225 07 08 45 12 90',
     address: 'Abidjan — Cocody Riviera 3, Côte d’Ivoire',
     governanceInstance: 'COPROJ'
   },
-  'bamba aminata (drh ugp)': {
+  'directeur des ressources humaines (drh ugp)': {
+    fullName: 'BAMBA Aminata',
     category: 'Interne',
-    roleOrFunction: 'Directrice des Ressources Humaines & Conduite du Changement',
+    roleOrFunction: 'Directeur des Ressources Humaines & Conduite du Changement',
     organization: 'Direction Générale de la Stratégie & Pilotage des Projets (UGP)',
     department: 'Département Capital Humain & Renforcement des Capacités',
-    email: 'aminata.bamba@ugp-programme.ci',
+    email: 'drh.ugp@ugp-programme.ci',
     phone: '+225 05 04 33 21 10',
     address: 'Abidjan — Plateau, Avenue Lamblin',
     governanceInstance: 'COPROJ'
   },
-  'cellule data & sécurité ugp': {
+  'responsable ingénierie data & cybersécurité (rssi)': {
+    fullName: 'KONÉ Seydou',
     category: 'Interne',
-    roleOrFunction: 'Équipe Ingénierie Data, Qualité ISO 9001 & Cybersécurité (RSSI)',
+    roleOrFunction: 'Responsable Ingénierie Data, Qualité ISO 9001 & Cybersécurité (RSSI)',
     organization: 'Direction Générale de la Stratégie & Pilotage des Projets (UGP)',
     department: 'Cellule Qualité, Sécurité & Gouvernance des Données',
     email: 'data.securite@ugp-programme.ci',
@@ -897,7 +985,8 @@ const SEED_ACTOR_DETAILS: Record<
     address: 'Abidjan — Centre Technique Numérique UGP',
     governanceInstance: 'COPROJ'
   },
-  'commission des marchés ugp': {
+  'spécialiste passation des marchés (spm)': {
+    fullName: 'N’GUESSAN Ahoua',
     category: 'Interne',
     roleOrFunction: 'Spécialiste Principal en Passation des Marchés (SPM)',
     organization: 'Direction des Opérations & Projets (UGP)',
@@ -907,7 +996,8 @@ const SEED_ACTOR_DETAILS: Record<
     address: 'Siège UGP — Abidjan, Côte d’Ivoire',
     governanceInstance: 'COPROJ'
   },
-  'ministère de tutelle & copil': {
+  'président du comité de pilotage (copil / tutelle)': {
+    fullName: 'Dr. KOUADIO Jean-Baptiste',
     category: 'Externe',
     roleOrFunction: 'Présidence du Comité de Pilotage, Tutelle & Approbation Stratégique',
     organization: 'Ministère de Tutelle Technique & Cabinet Ministériel',
@@ -917,9 +1007,10 @@ const SEED_ACTOR_DETAILS: Record<
     address: 'Cité Administrative Tour B, Plateau, Abidjan',
     governanceInstance: 'COPIL'
   },
-  'autorité nationale de régulation & contrôle': {
+  'directeur de la régulation & du contrôle': {
+    fullName: 'TOURÉ Souleymane',
     category: 'Externe',
-    roleOrFunction: 'Autorité de Régulation, Visas Réglementaires & Audit de Conformité',
+    roleOrFunction: 'Directeur de la Régulation, Visas Réglementaires & Audit de Conformité',
     organization: 'Autorité Nationale de Régulation & Inspection Générale',
     department: 'Direction du Contrôle des Normes, Visas & Homologations',
     email: 'controle.conformite@regulation.gouv.ci',
@@ -927,9 +1018,10 @@ const SEED_ACTOR_DETAILS: Record<
     address: 'Plateau, Boulevard Angoulvant, Abidjan',
     governanceInstance: 'COPIL'
   },
-  'consortium tech & cabinet ingénierie (prestataire)': {
+  'chef de mission prestataire si & cloud': {
+    fullName: 'DIALLO Ibrahim',
     category: 'Prestataire',
-    roleOrFunction: 'Groupement Titulaire du Marché & Déploiement des Infrastructures SI',
+    roleOrFunction: 'Chef de Mission Groupement Titulaire & Déploiement SI / Cloud',
     organization: 'Consortium Tech International & Bureau d’Études Associé',
     department: 'Direction de Projet Adjudicataire & Ingénierie Cloud',
     email: 'direction.mission@consortium-tech.com',
@@ -937,9 +1029,10 @@ const SEED_ACTOR_DETAILS: Record<
     address: 'Zone 4C, Marcory, Abidjan, Côte d’Ivoire',
     governanceInstance: 'Opérationnel / Aucun'
   },
-  'cabinet partenaire & formateurs (prestataire)': {
+  'consultant formateur principal pmp / gar': {
+    fullName: 'YAO Kouamé',
     category: 'Prestataire',
-    roleOrFunction: 'Cabinet Certifié PMP / GAR / Suivi-Évaluation & Ingénierie Pédagogique',
+    roleOrFunction: 'Consultant Formateur Certifié PMP / GAR / Suivi-Évaluation',
     organization: 'Institut International de Management & Conseil (IIMC)',
     department: 'Pôle Certification & Formation Continue des Cadres',
     email: 'formation.gar@cabinet-iimc.org',
@@ -947,9 +1040,10 @@ const SEED_ACTOR_DETAILS: Record<
     address: 'Cocody Deux-Plateaux Vallons, Abidjan',
     governanceInstance: 'Opérationnel / Aucun'
   },
-  'banque mondiale & partenaires financiers (ptf)': {
+  'chargé de programme bailleur (ttl / ptf)': {
+    fullName: 'LEFÈVRE Marc-Antoine',
     category: 'Partenaire Financier',
-    roleOrFunction: 'Bailleur de Fonds, Supervision Fiduciaire & Avis de Non-Objection (ANO)',
+    roleOrFunction: 'Chargé de Programme (TTL), Supervision Fiduciaire & Avis de Non-Objection (ANO)',
     organization: 'Groupe de la Banque Mondiale / BAD / Union Européenne / PNUD',
     department: 'Division des Opérations & Financements de Projets Pays',
     email: 'ttl.operations@worldbank-ptf.org',
@@ -957,9 +1051,10 @@ const SEED_ACTOR_DETAILS: Record<
     address: 'Cocody Ambassades, Rue Booker Washington, Abidjan',
     governanceInstance: 'COPIL'
   },
-  'collectif des bénéficiaires & usagers finaux': {
+  'représentant du collectif des bénéficiaires': {
+    fullName: 'SORO Adama',
     category: 'Bénéficiaires',
-    roleOrFunction: 'Représentants des Populations Cibles, Usagers & Organisations Bénéficiaires',
+    roleOrFunction: 'Représentant des Populations Cibles, Usagers & Organisations Bénéficiaires',
     organization: 'Fédération Nationale des Usagers & Comités Locaux Bénéficiaires',
     department: 'Comité Participatif de Suivi Citoyen & Réception Sociale',
     email: 'porte.parole@beneficiaires-programme.ci',
@@ -970,9 +1065,9 @@ const SEED_ACTOR_DETAILS: Record<
 };
 
 /**
- * Construit et synchronise la liste des acteurs classés dans les 5 catégories obligatoires
+ * Construit et synchronise la liste des acteurs (postes/fonctions) classés dans les 5 catégories obligatoires
  * pour un Programme donné (ventilés par Axe et par Projet), en dépendance à 100 % avec l'onglet RACI.
- * Aucun acteur fantôme n'est injecté : seuls les acteurs figurant dans les tâches RACI du programme apparaissent.
+ * Aucun acteur fantôme n'est injecté : tous les acteurs figurant dans la RACI du programme sont présents.
  */
 export function ensureDossierCategorizedActors(
   dossier: Dossier,
@@ -984,11 +1079,19 @@ export function ensureDossierCategorizedActors(
 
   // Map des métadonnées existantes (modifiées par l'utilisateur dans l'onglet Catégorie)
   const existingByKey = new Map<string, CategorizedActor>();
-  const existingById = new Map<string, CategorizedActor>();
   existing.forEach(item => {
     if (item && item.name) {
-      existingByKey.set(item.name.trim().toLowerCase(), item);
-      if (item.id) existingById.set(item.id, item);
+      const rawKey = item.name.trim().toLowerCase();
+      const normPos = normalizeRaciActorToPosition(item.name);
+      const normPosKey = normPos.trim().toLowerCase();
+      const wasPersonalName = normPosKey !== rawKey && !item.fullName;
+      const resolvedItem: CategorizedActor = {
+        ...item,
+        name: normPos,
+        fullName: item.fullName || (wasPersonalName ? item.name.trim() : undefined)
+      };
+      existingByKey.set(rawKey, resolvedItem);
+      existingByKey.set(normPosKey, resolvedItem);
     }
   });
 
@@ -1001,7 +1104,7 @@ export function ensureDossierCategorizedActors(
     if (!raw) return [];
     return raw
       .split(',')
-      .map(s => s.trim())
+      .map(s => normalizeRaciActorToPosition(s.trim()))
       .filter(
         s =>
           s.length > 0 &&
@@ -1014,7 +1117,7 @@ export function ensureDossierCategorizedActors(
       );
   };
 
-  // Parcourir exclusivement les tâches WBS / RACI du programme actif
+  // Parcourir exclusivement toutes les colonnes R, A, C, I des tâches du programme actif
   const activeRaciMap = new Map<
     string,
     {
@@ -1055,10 +1158,12 @@ export function ensureDossierCategorizedActors(
           });
         };
 
-        const rNames = splitNames(task.assignee || task.raciR || task.responsabilite);
-        const aNames = splitNames(task.autorite || task.raciA);
-        const cNames = splitNames(task.consulte || task.raciC);
-        const iNames = splitNames(task.informe || task.raciI);
+        const rNames = splitNames(
+          [task.assignee, task.raciR].filter(Boolean).join(', ') || task.responsabilite
+        );
+        const aNames = splitNames([task.autorite, task.raciA].filter(Boolean).join(', '));
+        const cNames = splitNames([task.consulte, task.raciC].filter(Boolean).join(', '));
+        const iNames = splitNames([task.informe, task.raciI].filter(Boolean).join(', '));
 
         registerNames(rNames, 'R');
         registerNames(aNames, 'A');
@@ -1075,11 +1180,33 @@ export function ensureDossierCategorizedActors(
     const saved = existingByKey.get(normKey);
     const seedMeta = SEED_ACTOR_DETAILS[normKey] || {};
     const isPrincipalUser =
-      userProfile?.fullName &&
-      normKey === userProfile.fullName.trim().toLowerCase();
+      (userProfile?.fullName &&
+        normKey === userProfile.fullName.trim().toLowerCase()) ||
+      normKey === 'coordonnateur général pmo';
+
+    const normalizeSavedCategory = (rawCat?: string): ActorCategoryType | undefined => {
+      if (!rawCat) return undefined;
+      const c = String(rawCat).trim().toLowerCase();
+      if (c === '1' || c.startsWith('1.') || c.includes('bénéficiaire') || c.includes('beneficiaire')) {
+        return 'Bénéficiaires';
+      }
+      if (c === '2' || c.startsWith('2.') || c.includes('interne')) {
+        return 'Interne';
+      }
+      if (c === '3' || c.startsWith('3.') || c.includes('externe')) {
+        return 'Externe';
+      }
+      if (c === '4' || c.startsWith('4.') || c.includes('prestataire')) {
+        return 'Prestataire';
+      }
+      if (c === '5' || c.startsWith('5.') || c.includes('partenaire') || c.includes('financier')) {
+        return 'Partenaire Financier';
+      }
+      return undefined;
+    };
 
     const inferredCat =
-      saved?.category ||
+      normalizeSavedCategory(saved?.category) ||
       seedMeta.category ||
       inferActorCategory(raciInfo.displayName, userProfile);
 
@@ -1127,7 +1254,11 @@ export function ensureDossierCategorizedActors(
 
     result.push({
       id: saved?.id || `cat-act-${dossier.id}-${codeSuffix}`,
-      name: saved?.name || raciInfo.displayName,
+      name: raciInfo.displayName,
+      fullName:
+        saved?.fullName !== undefined
+          ? saved.fullName
+          : seedMeta.fullName || (isPrincipalUser ? userProfile.fullName : ''),
       category: inferredCat,
       dossierId: dossier.id,
       axeId: resolvedAxeId,
@@ -1135,18 +1266,7 @@ export function ensureDossierCategorizedActors(
       roleOrFunction:
         saved?.roleOrFunction ||
         seedMeta.roleOrFunction ||
-        (isPrincipalUser
-          ? userProfile.role ||
-            'Coordonnateur Général & Architecte du Pilotage Stratégique (PMO)'
-          : inferredCat === 'Interne'
-          ? `Responsable Opérationnel & Expert UGP (${rolesArr.join('/')})`
-          : inferredCat === 'Externe'
-          ? 'Autorité d’Approbation, Visa Réglementaire & Contrôle'
-          : inferredCat === 'Prestataire'
-          ? 'Opérateur Économique Titulaire & Exécution des Livrables'
-          : inferredCat === 'Partenaire Financier'
-          ? 'Chargé de Programme & Avis de Non-Objection (ANO)'
-          : 'Représentant des Bénéficiaires & Usagers Finaux'),
+        raciInfo.displayName,
       organization:
         saved?.organization ||
         seedMeta.organization ||
@@ -1374,6 +1494,48 @@ export async function saveActorProfilesToIDB(
   }
 }
 
+export function sanitizeDossierRaciPositions(
+  dossier: Dossier,
+  userProfile: UserProfile = defaultUserProfile
+): Dossier {
+  const sanitizedAxes = (dossier.axes || []).map(ax => ({
+    ...ax,
+    projects: (ax.projects || []).map(pr => ({
+      ...pr,
+      tasks: (pr.tasks || []).map(tk => ({
+        ...tk,
+        assignee: normalizeRaciFieldList(tk.assignee) || tk.assignee,
+        raciR: tk.raciR ? normalizeRaciFieldList(tk.raciR) : tk.raciR,
+        responsabilite: tk.responsabilite
+          ? normalizeRaciFieldList(tk.responsabilite)
+          : tk.responsabilite,
+        autorite: tk.autorite ? normalizeRaciFieldList(tk.autorite) : tk.autorite,
+        raciA: tk.raciA ? normalizeRaciFieldList(tk.raciA) : tk.raciA,
+        consulte: tk.consulte ? normalizeRaciFieldList(tk.consulte) : tk.consulte,
+        raciC: tk.raciC ? normalizeRaciFieldList(tk.raciC) : tk.raciC,
+        informe: tk.informe ? normalizeRaciFieldList(tk.informe) : tk.informe,
+        raciI: tk.raciI ? normalizeRaciFieldList(tk.raciI) : tk.raciI,
+        gestionnaireRisque: tk.gestionnaireRisque
+          ? normalizeRaciFieldList(tk.gestionnaireRisque)
+          : tk.gestionnaireRisque,
+        decideurProprietaire: tk.decideurProprietaire
+          ? normalizeRaciFieldList(tk.decideurProprietaire)
+          : tk.decideurProprietaire
+      }))
+    }))
+  }));
+
+  const nextDossier: Dossier = {
+    ...dossier,
+    axes: sanitizedAxes
+  };
+
+  return {
+    ...nextDossier,
+    categorizedActors: ensureDossierCategorizedActors(nextDossier, userProfile)
+  };
+}
+
 export async function loadAppStateFromIDB(
   explicitUid?: string | null
 ): Promise<Partial<AppPersistedState> | null> {
@@ -1383,6 +1545,17 @@ export async function loadAppStateFromIDB(
     return null;
   }
   const uid = (explicitUid ?? activeUserStorageUid ?? '').trim();
+
+  const normalizeLoadedState = (
+    st: Partial<AppPersistedState> | null
+  ): Partial<AppPersistedState> | null => {
+    if (!st) return null;
+    const prof = { ...defaultUserProfile, ...(st.userProfile || {}) };
+    if (Array.isArray(st.dossiers) && st.dossiers.length > 0) {
+      st.dossiers = st.dossiers.map(d => sanitizeDossierRaciPositions(d, prof));
+    }
+    return st;
+  };
 
   try {
     const db = await openDB();
@@ -1421,9 +1594,9 @@ export async function loadAppStateFromIDB(
               d => mapById.get(d.id) || d
             );
           }
-          resolve(mainState);
+          resolve(normalizeLoadedState(mainState));
         };
-        getAllReq.onerror = () => resolve(mainState);
+        getAllReq.onerror = () => resolve(normalizeLoadedState(mainState));
       };
       req.onerror = () => reject(req.error);
     });
@@ -1431,7 +1604,7 @@ export async function loadAppStateFromIDB(
     console.warn('Fallback lecture localStorage:', err);
     try {
       const raw = localStorage.getItem(scopedStateKey);
-      return raw ? safeJsonParse(raw, null) : null;
+      return raw ? normalizeLoadedState(safeJsonParse(raw, null)) : null;
     } catch {
       return null;
     }
@@ -1553,27 +1726,43 @@ export async function loadStateFromDB(): Promise<AppPersistedState> {
 
   // Ensure every programme container has its categorizedActors, customDocsData and actorProfiles
   const dossiers: Dossier[] = rawDossiers.map(d => {
-    const upgradedAxes = needsSeedUpgrade
-      ? (d.axes || []).map(ax => ({
-          ...ax,
-          projects: (ax.projects || []).map(pr => ({
-            ...pr,
-            tasks: (pr.tasks || []).map(tk => {
-              const seedTk = seedTaskMap.get(tk.id);
-              if (seedTk && !tk.autorite && !tk.consulte && !tk.informe) {
-                return {
+    const upgradedAxes = (d.axes || []).map(ax => ({
+      ...ax,
+      projects: (ax.projects || []).map(pr => ({
+        ...pr,
+        tasks: (pr.tasks || []).map(tk => {
+          const seedTk = seedTaskMap.get(tk.id);
+          const baseTk =
+            needsSeedUpgrade && seedTk && !tk.autorite && !tk.consulte && !tk.informe
+              ? {
                   ...tk,
                   assignee: seedTk.assignee,
                   autorite: seedTk.autorite,
                   consulte: seedTk.consulte,
                   informe: seedTk.informe
-                };
-              }
-              return tk;
-            })
-          }))
-        }))
-      : d.axes || [];
+                }
+              : tk;
+
+          return {
+            ...baseTk,
+            assignee: normalizeRaciFieldList(baseTk.assignee) || baseTk.assignee,
+            raciR: normalizeRaciFieldList(baseTk.raciR),
+            autorite: normalizeRaciFieldList(baseTk.autorite),
+            raciA: normalizeRaciFieldList(baseTk.raciA),
+            consulte: normalizeRaciFieldList(baseTk.consulte),
+            raciC: normalizeRaciFieldList(baseTk.raciC),
+            informe: normalizeRaciFieldList(baseTk.informe),
+            raciI: normalizeRaciFieldList(baseTk.raciI),
+            gestionnaireRisque: baseTk.gestionnaireRisque
+              ? normalizeRaciFieldList(baseTk.gestionnaireRisque)
+              : undefined,
+            decideurProprietaire: baseTk.decideurProprietaire
+              ? normalizeRaciFieldList(baseTk.decideurProprietaire)
+              : undefined
+          };
+        })
+      }))
+    }));
 
     const upgradedDossier: Dossier = {
       ...d,

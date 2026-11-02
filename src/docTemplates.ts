@@ -22,6 +22,7 @@ import {
   resolveActiveMatricesData,
   resolveProgramRaciContext
 } from './docMatrices';
+import { normalizeRaciFieldList } from './db';
 
 export interface DocFieldDescriptor {
   key: keyof CustomDocFields;
@@ -2274,6 +2275,9 @@ export function buildDynamicFieldsFromAppTabs(
   let todoTasks = 0;
   let delayedTasks = 0;
   let totalBudgetFCFA = 0;
+  let totalDecaissementFCFA = 0;
+  let totalValeurAcquiseFCFA = 0;
+  let totalCoutReelFCFA = 0;
 
   const uniqueAssignees = new Set<string>(raciCtx.rList);
   const uniqueAuthorities = new Set<string>(raciCtx.aList);
@@ -2287,6 +2291,7 @@ export function buildDynamicFieldsFromAppTabs(
     'ressource materielle': 0,
     'ressource financiere': 0
   };
+  const pestelCounts: Record<string, number> = {};
   const riskLabelsList: string[] = [];
   const riskActionsList: string[] = [];
 
@@ -2297,6 +2302,31 @@ export function buildDynamicFieldsFromAppTabs(
         const m = computeTaskMetrics(tk, todayISO);
         const b = Number(tk.budget) || 0;
         totalBudgetFCFA += b;
+
+        const isDone = m.effectiveStatus === 'Terminé' || String(tk.status) === 'Traité';
+        const isInProg = m.effectiveStatus === 'En cours';
+        const decVal =
+          tk.montantDecaissement !== undefined
+            ? Number(tk.montantDecaissement) || 0
+            : isDone
+            ? b
+            : isInProg
+            ? Math.round(b * 0.5)
+            : 0;
+        const vaVal =
+          tk.valeurAcquise !== undefined
+            ? Number(tk.valeurAcquise) || 0
+            : isDone
+            ? b
+            : isInProg
+            ? Math.round(b * 0.5)
+            : 0;
+        const crVal = tk.coutReel !== undefined ? Number(tk.coutReel) || 0 : decVal;
+
+        totalDecaissementFCFA += decVal;
+        totalValeurAcquiseFCFA += vaVal;
+        totalCoutReelFCFA += crVal;
+
         if (m.effectiveStatus === 'Terminé') completedTasks++;
         else if (m.effectiveStatus === 'En cours') inProgressTasks++;
         else if (m.effectiveStatus === 'Bloqué') blockedTasks++;
@@ -2308,6 +2338,9 @@ export function buildDynamicFieldsFromAppTabs(
         if (crit === 'Critique') criticalRisksCount++;
         else if (crit === 'Élevée') elevatedRisksCount++;
 
+        const pestel = (tk.evaluationPestel || 'Opérationnel').trim();
+        pestelCounts[pestel] = (pestelCounts[pestel] || 0) + 1;
+
         const faib = (tk.faiblesse || 'ressource humaine').trim().toLowerCase();
         if (faib.includes('materiel') || faib.includes('matériel')) {
           faiblesseCounts['ressource materielle']++;
@@ -2318,7 +2351,9 @@ export function buildDynamicFieldsFromAppTabs(
         }
 
         if (tk.libelleRisque && tk.libelleRisque.trim()) {
-          riskLabelsList.push(`${tk.libelleRisque.trim()} (${crit})`);
+          riskLabelsList.push(
+            `${tk.libelleRisque.trim()} [P:${tk.probabilite || 'Moyenne'} × G:${tk.gravite || 'Modérée'} = ${crit}]`
+          );
         }
         if (tk.actionPreventive || tk.actionCorrective || tk.resolutionFinale) {
           riskActionsList.push(
@@ -2337,12 +2372,20 @@ export function buildDynamicFieldsFromAppTabs(
   });
 
   const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const pctValeurAcquiseGlobal =
+    totalBudgetFCFA > 0 ? Math.round((totalValeurAcquiseFCFA / totalBudgetFCFA) * 100) : 0;
   const criticalNodes = allNodes.filter(n => n.isCritical);
   const criticalSeq = criticalNodes.map(n => n.code).join(' -> ') || 'N/A';
   const maxDur = pertSummaries.reduce((acc, p) => Math.max(acc, p.projectDuration), 0);
   const budgetFormatted = formatDocAmount(totalBudgetFCFA, currency, lang);
+  const decaissementFormatted = formatDocAmount(totalDecaissementFCFA, currency, lang);
+  const valeurAcquiseFormatted = formatDocAmount(totalValeurAcquiseFCFA, currency, lang);
+  const coutReelFormatted = formatDocAmount(totalCoutReelFCFA, currency, lang);
   const faiblesseSummary = `Faiblesses identifiées : Ressource humaine (${faiblesseCounts['ressource humaine']}), Ressource matérielle (${faiblesseCounts['ressource materielle']}), Ressource financière (${faiblesseCounts['ressource financiere']})`;
-  const riskOverviewSummary = `Suivi des Risques : ${totalTasks} risque(s) suivi(s) (${completedTasks} traité(s) [${progressPct}%], ${inProgressTasks} en cours, ${blockedTasks} bloqué(s), ${criticalRisksCount} critique(s), ${elevatedRisksCount} élevé(s)) · ${faiblesseSummary}`;
+  const pestelSummary = Object.entries(pestelCounts)
+    .map(([k, v]) => `${k} (${v})`)
+    .join(', ');
+  const riskOverviewSummary = `Suivi des Risques : ${totalTasks} risque(s) suivi(s) (${completedTasks} traité(s) [${progressPct}%], ${inProgressTasks} en cours, ${blockedTasks} bloqué(s), ${criticalRisksCount} critique(s), ${elevatedRisksCount} élevé(s)) · Décaissement : ${decaissementFormatted} · Valeur Acquise : ${valeurAcquiseFormatted} (${pctValeurAcquiseGlobal}% du budget) · Coût Réel : ${coutReelFormatted} · PESTEL : ${pestelSummary || 'N/A'} · ${faiblesseSummary}`;
   const topRisksPreview =
     riskLabelsList.length > 0
       ? `Risques majeurs suivis : ${riskLabelsList.slice(0, 4).join(' ; ')}`
@@ -2366,9 +2409,19 @@ export function buildDynamicFieldsFromAppTabs(
   const birthDateStr = userProfile.birthDate ? ` | Né(e) le : ${userProfile.birthDate}` : '';
   const leadActor = raciCtx.leadActorName;
   const leadRole = raciCtx.leadActorRole;
+  const categorizedSummary =
+    raciCtx.categorizedActors.length > 0
+      ? `Acteurs Catégorisés (${raciCtx.categorizedActors.length}) : ${raciCtx.categorizedActors
+          .slice(0, 6)
+          .map(
+            ca =>
+              `${ca.name}${ca.fullName ? ` [${ca.fullName}]` : ''} (${ca.category} · ${ca.organization})`
+          )
+          .join(' ; ')}`
+      : '';
   const allRaciSummary = raciCtx.hasAnyRaciActor
-    ? `Acteurs RACI du programme : R=[${raciCtx.rList.join(', ') || userProfile.fullName}] · A=[${raciCtx.aList.join(', ') || userProfile.fullName}] · C=[${raciCtx.cList.join(', ') || userProfile.fullName}] · I=[${raciCtx.iList.join(', ') || userProfile.institution}]`
-    : `Aucun acteur renseigné dans RACI — Affichage par défaut du profil utilisateur : ${userProfile.fullName} (${userProfile.role})`;
+    ? `Postes RACI du programme : R=[${raciCtx.rList.join(', ') || userProfile.role}] · A=[${raciCtx.aList.join(', ') || userProfile.role}] · C=[${raciCtx.cList.join(', ') || userProfile.role}] · I=[${raciCtx.iList.join(', ') || userProfile.institution}]${categorizedSummary ? ` | ${categorizedSummary}` : ''}`
+    : `Aucun poste renseigné dans RACI — Affichage par défaut du profil utilisateur : ${userProfile.fullName} (${userProfile.role})`;
 
   if (docType === 'courrier_admin') {
     return {
@@ -2919,26 +2972,34 @@ function buildRawInstitutionalDocPages(
         totalBudgetFCFA += b;
         pBudget += b;
 
-        let taskDisbursed = 0;
         if (metrics.effectiveStatus === 'Terminé') {
           completedTasks++;
           completedBudgetFCFA += b;
           pDone++;
-          taskDisbursed = b;
         } else if (metrics.effectiveStatus === 'En cours') {
           inProgressTasks++;
           inProgressBudgetFCFA += b;
           pInProg++;
-          taskDisbursed = Math.round(b * 0.6);
         } else if (metrics.effectiveStatus === 'Bloqué') {
           blockedTasks++;
           pBlocked++;
-          taskDisbursed = Math.round(b * 0.2);
         } else {
           todoTasks++;
           pTodo++;
-          taskDisbursed = 0;
         }
+
+        const taskDisbursed =
+          task.montantDecaissement !== undefined
+            ? Number(task.montantDecaissement) || 0
+            : task.coutReel !== undefined
+            ? Number(task.coutReel) || 0
+            : metrics.effectiveStatus === 'Terminé'
+            ? b
+            : metrics.effectiveStatus === 'En cours'
+            ? Math.round(b * 0.6)
+            : metrics.effectiveStatus === 'Bloqué'
+            ? Math.round(b * 0.2)
+            : 0;
         pDisbursed += taskDisbursed;
 
         if (metrics.ecartDebutDays > 0 || metrics.ecartFinDays > 0) {
@@ -2955,10 +3016,10 @@ function buildRawInstitutionalDocPages(
         const formattedTaskBudget = formatDocAmount(b, currency, lang);
 
         // 1. Planification WBS & Budget Analytique (6 colonnes calibrées : [9, 15, 28, 16, 16, 16])
-        const resolvedR = (task.assignee || '').trim() || raciCtx.primaryR;
-        const resolvedA = (task.autorite || '').trim() || raciCtx.primaryA;
-        const resolvedC = (task.consulte || task.responsabilite || '').trim() || raciCtx.primaryC;
-        const resolvedI = (task.informe || '').trim() || raciCtx.primaryI;
+        const resolvedR = normalizeRaciFieldList(task.assignee || '') || raciCtx.primaryR;
+        const resolvedA = normalizeRaciFieldList(task.autorite || '') || raciCtx.primaryA;
+        const resolvedC = normalizeRaciFieldList(task.consulte || task.responsabilite || '') || raciCtx.primaryC;
+        const resolvedI = normalizeRaciFieldList(task.informe || '') || raciCtx.primaryI;
         const livrableLabel = (task.livrable || '').trim();
 
         wbsBudgetRows.push([

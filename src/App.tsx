@@ -73,9 +73,10 @@ import {
   saveAppStateToIDB,
   setActiveUserStorageUid,
   ensureDossierCategorizedActors,
-  renameActorInDossierTasks
+  renameActorInDossierTasks,
+  normalizeRaciFieldList
 } from './db';
-import { translations, formatCurrency } from './i18n';
+import { translations, formatCurrency, convertFromFCFA } from './i18n';
 import { generateDirectWhitePDF } from './pdfExport';
 import {
   saveProgramFile,
@@ -183,6 +184,7 @@ export function App() {
   // PERT View & Zoom (down to 10% = 0.10)
   const [pertZoom, setPertZoom] = useState<number>(1);
   const [pertViewMode, setPertViewMode] = useState<'graph' | 'table'>('graph');
+  const [pertDimension, setPertDimension] = useState<'taches' | 'budget'>('taches');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvPlanInputRef = useRef<HTMLInputElement>(null);
@@ -1601,10 +1603,10 @@ export function App() {
                   startDate: todayISO,
                   endDate: todayISO,
                   status: 'En cours',
-                  assignee: userProfile.fullName || 'Chef de Projet',
-                  autorite: 'Comité de Pilotage (COPIL)',
-                  consulte: 'Experts Techniques',
-                  informe: 'Parties Prenantes',
+                  assignee: userProfile.role || 'Coordonnateur Général PMO',
+                  autorite: 'Président du Comité de Pilotage (COPIL / Tutelle)',
+                  consulte: 'Chargé de Programme Bailleur (TTL / PTF)',
+                  informe: 'Représentant du Collectif des Bénéficiaires',
                   budget: 5000000,
                   antecedent: '—'
                 }
@@ -1760,7 +1762,7 @@ export function App() {
         customData?.assignee !== undefined
           ? customData.assignee
           : userProfile.intervenesAsProgramActor !== false
-          ? userProfile.fullName || ''
+          ? userProfile.role || 'Coordonnateur Général PMO'
           : '',
       autorite: customData?.autorite || '',
       consulte: customData?.consulte || '',
@@ -3067,8 +3069,8 @@ export function App() {
       ...Array.from(levelsMap.values()).map(l => l.length)
     );
 
-    const colWidth = 250;
-    const rowHeight = 130;
+    const colWidth = pertDimension === 'budget' ? 270 : 250;
+    const rowHeight = pertDimension === 'budget' ? 142 : 130;
     const svgWidth = Math.max(820, (maxLevel + 1) * colWidth + 120);
     const svgHeight = Math.max(420, maxNodesInLevel * rowHeight + 100);
 
@@ -3085,23 +3087,51 @@ export function App() {
       <div className="space-y-4">
         {renderMacroFilterBar()}
 
-        {/* PERT Controls Bar (Zoom down to 10% = 0.10) */}
+        {/* PERT Controls Bar (Dissociation PERT des Tâches / PERT Budgétaire + Graph/Table + Zoom down to 10%) */}
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3 shadow-sm flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
               <Network className="w-4 h-4 text-[#0284c7] dark:text-[#90D5FF]" />
-              {language === 'EN'
-                ? 'PERT Network & Critical Path (CPM)'
-                : 'Réseau PERT & Chemin Critique (CPM)'}
+              {pertDimension === 'taches'
+                ? language === 'EN'
+                  ? 'Task PERT Network & Critical Path (CPM)'
+                  : 'Réseau PERT des Tâches & Chemin Critique (CPM)'
+                : language === 'EN'
+                ? 'Budgetary PERT Network (Disbursement, EVM & Actual Cost)'
+                : 'Réseau PERT Budgétaire (Décaissement, Valeur Acquise & Coût Réel)'}
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               {language === 'EN'
-                ? 'Zoom out down to 10% to view the entire PERT graph on mobile and desktop'
-                : 'Dézoomez jusqu’à 10% pour visualiser l’intégralité du graphe PERT sur mobile et ordinateur'}
+                ? 'Dissociated Task PERT & Budgetary PERT views — condensed together in official reports'
+                : 'Accès dissocié au PERT des Tâches et au PERT Budgétaire — condensés ensemble dans les rapports'}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Dissociated Selector: PERT des Tâches vs PERT Budgétaire */}
+            <div className="flex items-center gap-1 bg-orange-50 dark:bg-slate-800 border border-orange-200 dark:border-slate-700 p-1 rounded-lg">
+              <button
+                onClick={() => setPertDimension('taches')}
+                className={`px-3 py-1 rounded text-xs font-black transition-all cursor-pointer ${
+                  pertDimension === 'taches'
+                    ? 'bg-[#0c4a6e] text-white shadow-xs'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700'
+                }`}
+              >
+                {language === 'EN' ? '1. Task PERT' : '1. PERT des Tâches'}
+              </button>
+              <button
+                onClick={() => setPertDimension('budget')}
+                className={`px-3 py-1 rounded text-xs font-black transition-all cursor-pointer ${
+                  pertDimension === 'budget'
+                    ? 'bg-orange-600 text-white shadow-xs'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700'
+                }`}
+              >
+                {language === 'EN' ? '2. Budgetary PERT' : '2. PERT Budgétaire'}
+              </button>
+            </div>
+
             {/* Switch Graph / Table */}
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
               <button
@@ -3173,263 +3203,633 @@ export function App() {
           </div>
         </div>
 
-        {/* Dynamic PERT Interpretation Cards */}
-        <div className="space-y-3">
-          {pertSummaries.map(ps => (
-            <div
-              key={ps.projectId}
-              className="bg-sky-50/80 dark:bg-slate-900 rounded-xl border border-[#90D5FF] dark:border-sky-800 p-4 space-y-2"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-[#0c4a6e] dark:text-[#90D5FF]">
-                  {ps.projectName} —{' '}
-                  {language === 'EN' ? 'Total Duration:' : 'Durée Totale :'}{' '}
-                  {ps.projectDuration}j
-                </span>
-                <span className="px-2.5 py-0.5 rounded bg-[#0c4a6e] text-white text-[10px] font-black">
-                  {language === 'EN' ? 'Critical Path:' : 'Chemin Critique :'}{' '}
-                  {ps.criticalPathCodes.join(' → ') || 'N/A'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-700 dark:text-slate-300">
-                {ps.interpretation.criticalPathSummary}
-              </p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">
-                {ps.interpretation.slackSummary}
-              </p>
-              <p className="text-xs font-bold text-slate-900 dark:text-white">
-                {ps.interpretation.riskAndSteeringSummary}
-              </p>
+        {/* =====================================================================
+            DISSOCIATED VIEW 1 : PERT DES TÂCHES (CALENDAIRE & CHEMIN CRITIQUE)
+           ===================================================================== */}
+        {pertDimension === 'taches' && (
+          <>
+            {/* Dynamic Task PERT Interpretation Cards */}
+            <div className="space-y-3">
+              {pertSummaries.map(ps => (
+                <div
+                  key={ps.projectId}
+                  className="bg-sky-50/80 dark:bg-slate-900 rounded-xl border border-[#90D5FF] dark:border-sky-800 p-4 space-y-2"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-[#0c4a6e] dark:text-[#90D5FF]">
+                      [PERT DES TÂCHES] {ps.projectName} —{' '}
+                      {language === 'EN' ? 'Total Duration:' : 'Durée Totale :'}{' '}
+                      {ps.projectDuration}j
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded bg-[#0c4a6e] text-white text-[10px] font-black">
+                      {language === 'EN' ? 'Critical Path:' : 'Chemin Critique :'}{' '}
+                      {ps.criticalPathCodes.join(' → ') || 'N/A'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-700 dark:text-slate-300">
+                    {ps.interpretation.criticalPathSummary}
+                  </p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                    {ps.interpretation.slackSummary}
+                  </p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">
+                    {ps.interpretation.riskAndSteeringSummary}
+                  </p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {pertViewMode === 'graph' ? (
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm overflow-auto max-h-[70vh]">
-            <div
-              style={{
-                transform: `scale(${pertZoom})`,
-                transformOrigin: 'top left',
-                width: svgWidth * pertZoom,
-                height: svgHeight * pertZoom
-              }}
-            >
-              <svg width={svgWidth} height={svgHeight} className="overflow-visible">
-                <defs>
-                  <marker
-                    id="arrow-normal"
-                    markerWidth="8"
-                    markerHeight="8"
-                    refX="6"
-                    refY="4"
-                    orient="auto"
-                  >
-                    <path d="M0,0 L8,4 L0,8 Z" fill="#0284c7" />
-                  </marker>
-                  <marker
-                    id="arrow-crit"
-                    markerWidth="8"
-                    markerHeight="8"
-                    refX="6"
-                    refY="4"
-                    orient="auto"
-                  >
-                    <path d="M0,0 L8,4 L0,8 Z" fill="#f59e0b" />
-                  </marker>
-                </defs>
-
-                {/* Dependency Edges */}
-                {allNodes.map(node => {
-                  if (!node.antecedentId || node.antecedentId === '—') return null;
-                  const from = nodePositions.get(node.antecedentId);
-                  const to = nodePositions.get(node.id);
-                  if (!from || !to) return null;
-                  const predNode = allNodes.find(n => n.id === node.antecedentId);
-                  const isCritEdge = node.isCritical && predNode?.isCritical;
-
-                  const x1 = from.x + 175;
-                  const y1 = from.y + 42;
-                  const x2 = to.x;
-                  const y2 = to.y + 42;
-                  const midX = (x1 + x2) / 2;
-
-                  return (
-                    <path
-                      key={`${node.antecedentId}->${node.id}`}
-                      d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
-                      fill="none"
-                      stroke={isCritEdge ? '#f59e0b' : '#0284c7'}
-                      strokeWidth={isCritEdge ? 3 : 1.8}
-                      strokeDasharray={isCritEdge ? undefined : '4 2'}
-                      markerEnd={
-                        isCritEdge ? 'url(#arrow-crit)' : 'url(#arrow-normal)'
-                      }
-                    />
-                  );
-                })}
-
-                {/* PERT Nodes */}
-                {allNodes.map(node => {
-                  const pos = nodePositions.get(node.id);
-                  if (!pos) return null;
-                  return (
-                    <g
-                      key={node.id}
-                      transform={`translate(${pos.x}, ${pos.y})`}
-                    >
-                      <rect
-                        width={175}
-                        height={86}
-                        rx={10}
-                        fill={node.isCritical ? '#fffbeb' : '#f0f9ff'}
-                        stroke={node.isCritical ? '#f59e0b' : '#0284c7'}
-                        strokeWidth={node.isCritical ? 2.5 : 1.5}
-                      />
-                      <text
-                        x={10}
-                        y={18}
-                        fontSize={11}
-                        fontWeight="900"
-                        fill="#0c4a6e"
+            {pertViewMode === 'graph' ? (
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm overflow-auto max-h-[70vh]">
+                <div
+                  style={{
+                    transform: `scale(${pertZoom})`,
+                    transformOrigin: 'top left',
+                    width: svgWidth * pertZoom,
+                    height: svgHeight * pertZoom
+                  }}
+                >
+                  <svg width={svgWidth} height={svgHeight} className="overflow-visible">
+                    <defs>
+                      <marker
+                        id="arrow-normal"
+                        markerWidth="8"
+                        markerHeight="8"
+                        refX="6"
+                        refY="4"
+                        orient="auto"
                       >
-                        {node.code} ({node.duration}j)
-                      </text>
-                      {node.isCritical && (
-                        <text
-                          x={114}
-                          y={18}
-                          fontSize={9}
-                          fontWeight="900"
-                          fill="#d97706"
+                        <path d="M0,0 L8,4 L0,8 Z" fill="#0284c7" />
+                      </marker>
+                      <marker
+                        id="arrow-crit"
+                        markerWidth="8"
+                        markerHeight="8"
+                        refX="6"
+                        refY="4"
+                        orient="auto"
+                      >
+                        <path d="M0,0 L8,4 L0,8 Z" fill="#f59e0b" />
+                      </marker>
+                    </defs>
+
+                    {/* Dependency Edges */}
+                    {allNodes.map(node => {
+                      if (!node.antecedentId || node.antecedentId === '—') return null;
+                      const from = nodePositions.get(node.antecedentId);
+                      const to = nodePositions.get(node.id);
+                      if (!from || !to) return null;
+                      const predNode = allNodes.find(n => n.id === node.antecedentId);
+                      const isCritEdge = node.isCritical && predNode?.isCritical;
+
+                      const x1 = from.x + 175;
+                      const y1 = from.y + 42;
+                      const x2 = to.x;
+                      const y2 = to.y + 42;
+                      const midX = (x1 + x2) / 2;
+
+                      return (
+                        <path
+                          key={`${node.antecedentId}->${node.id}`}
+                          d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
+                          fill="none"
+                          stroke={isCritEdge ? '#f59e0b' : '#0284c7'}
+                          strokeWidth={isCritEdge ? 3 : 1.8}
+                          strokeDasharray={isCritEdge ? undefined : '4 2'}
+                          markerEnd={
+                            isCritEdge ? 'url(#arrow-crit)' : 'url(#arrow-normal)'
+                          }
+                        />
+                      );
+                    })}
+
+                    {/* Task PERT Nodes */}
+                    {allNodes.map(node => {
+                      const pos = nodePositions.get(node.id);
+                      if (!pos) return null;
+                      return (
+                        <g
+                          key={node.id}
+                          transform={`translate(${pos.x}, ${pos.y})`}
                         >
-                          {language === 'EN' ? 'CRITICAL' : 'CRITIQUE'}
-                        </text>
-                      )}
-                      <text x={10} y={34} fontSize={9.5} fill="#334155">
-                        {node.name.length > 24
-                          ? `${node.name.slice(0, 24)}…`
-                          : node.name}
-                      </text>
-                      <line
-                        x1={8}
-                        y1={42}
-                        x2={167}
-                        y2={42}
-                        stroke="#cbd5e1"
-                        strokeWidth={1}
-                      />
-                      <text x={10} y={56} fontSize={9} fill="#0f172a">
-                        ES: J+{node.es} | EF: J+{node.ef}
-                      </text>
-                      <text x={10} y={70} fontSize={9} fill="#0f172a">
-                        LS: J+{node.ls} | LF: J+{node.lf}
-                      </text>
-                      <text
-                        x={114}
-                        y={78}
-                        fontSize={8.5}
-                        fontWeight="bold"
-                        fill={node.totalFloat === 0 ? '#d97706' : '#0284c7'}
+                          <rect
+                            width={175}
+                            height={86}
+                            rx={10}
+                            fill={node.isCritical ? '#fffbeb' : '#f0f9ff'}
+                            stroke={node.isCritical ? '#f59e0b' : '#0284c7'}
+                            strokeWidth={node.isCritical ? 2.5 : 1.5}
+                          />
+                          <text
+                            x={10}
+                            y={18}
+                            fontSize={11}
+                            fontWeight="900"
+                            fill="#0c4a6e"
+                          >
+                            {node.code} ({node.duration}j)
+                          </text>
+                          {node.isCritical && (
+                            <text
+                              x={114}
+                              y={18}
+                              fontSize={9}
+                              fontWeight="900"
+                              fill="#d97706"
+                            >
+                              {language === 'EN' ? 'CRITICAL' : 'CRITIQUE'}
+                            </text>
+                          )}
+                          <text x={10} y={34} fontSize={9.5} fill="#334155">
+                            {node.name.length > 24
+                              ? `${node.name.slice(0, 24)}…`
+                              : node.name}
+                          </text>
+                          <line
+                            x1={8}
+                            y1={42}
+                            x2={167}
+                            y2={42}
+                            stroke="#cbd5e1"
+                            strokeWidth={1}
+                          />
+                          <text x={10} y={56} fontSize={9} fill="#0f172a">
+                            ES: J+{node.es} | EF: J+{node.ef}
+                          </text>
+                          <text x={10} y={70} fontSize={9} fill="#0f172a">
+                            LS: J+{node.ls} | LF: J+{node.lf}
+                          </text>
+                          <text
+                            x={114}
+                            y={78}
+                            fontSize={8.5}
+                            fontWeight="bold"
+                            fill={node.totalFloat === 0 ? '#d97706' : '#0284c7'}
+                          >
+                            MT: {node.totalFloat}j
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              </div>
+            ) : (
+              /* Task PERT Table */
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto">
+                <table className="w-full border-collapse table-compact">
+                  <thead>
+                    <tr className="bg-[#0c4a6e] text-white">
+                      <th className="text-left">Code</th>
+                      <th className="text-left">
+                        {language === 'EN' ? 'Activity / Milestone' : 'Activité / Jalon'}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'Predec.' : 'Antécéd.'}
+                      </th>
+                      <th className="text-left">
+                        {language === 'EN'
+                          ? 'Preceding (Full Chain)'
+                          : 'Précéd. (Chaîne Complète)'}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'Duration' : 'Durée'}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'ES (Early)' : 'ES (Tôt)'}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'EF (Early)' : 'EF (Tôt)'}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'LS (Late)' : 'LS (Tard)'}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'LF (Late)' : 'LF (Tard)'}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'Total Float' : 'Marge Totale'}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'Critical Path' : 'Chemin Critique'}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {allNodes.map(node => (
+                      <tr
+                        key={node.id}
+                        className={
+                          node.isCritical
+                            ? 'bg-amber-50/60 dark:bg-amber-950/30 font-bold'
+                            : 'bg-white dark:bg-slate-900'
+                        }
                       >
-                        MT: {node.totalFloat}j
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
+                        <td className="font-mono text-[#0c4a6e] dark:text-[#90D5FF] font-black">
+                          {node.code}
+                        </td>
+                        <td className="text-slate-900 dark:text-white whitespace-normal break-words">
+                          <div>{node.name}</div>
+                          {node.libelleRisque && (
+                            <div className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 mt-0.5">
+                              {language === 'EN' ? 'Risk:' : 'Risque :'} {node.libelleRisque}
+                            </div>
+                          )}
+                        </td>
+                        <td className="text-center font-mono text-slate-700 dark:text-slate-300">
+                          {node.antecedentCode}
+                        </td>
+                        <td className="font-mono text-slate-600 dark:text-slate-400">
+                          {node.precedingChainCodes}
+                        </td>
+                        <td className="text-center font-mono">{node.duration}j</td>
+                        <td className="text-center font-mono">J+{node.es}</td>
+                        <td className="text-center font-mono">J+{node.ef}</td>
+                        <td className="text-center font-mono">J+{node.ls}</td>
+                        <td className="text-center font-mono">J+{node.lf}</td>
+                        <td className="text-center font-mono">{node.totalFloat}j</td>
+                        <td className="text-center">
+                          {node.isCritical ? (
+                            <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[9px] font-black">
+                              {language === 'EN' ? 'CRITICAL' : 'CRITIQUE'}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-emerald-600 font-bold">
+                              {language === 'EN' ? 'Flexible' : 'Souple'}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* =====================================================================
+            DISSOCIATED VIEW 2 : PERT BUDGÉTAIRE (FINANCIER, DÉCAISSEMENT & EVM)
+           ===================================================================== */}
+        {pertDimension === 'budget' && (
+          <>
+            {/* Dynamic Budgetary PERT Interpretation Cards */}
+            <div className="space-y-3">
+              {pertSummaries.map(ps => (
+                <div
+                  key={`bud-${ps.projectId}`}
+                  className="bg-orange-50/80 dark:bg-slate-900 rounded-xl border border-orange-300 dark:border-orange-800 p-4 space-y-2.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-orange-800 dark:text-orange-300">
+                      [PERT BUDGÉTAIRE] {ps.projectName} — Budget :{' '}
+                      {formatCurrency(ps.totalBudget, currency, language)}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="px-2.5 py-0.5 rounded bg-orange-600 text-white text-[10px] font-black">
+                        {language === 'EN' ? 'Critical Path Budget:' : 'Budget Chemin Critique :'}{' '}
+                        {formatCurrency(ps.criticalPathBudget, currency, language)}
+                      </span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded text-[10px] font-black ${
+                          ps.costVariance >= 0
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-rose-600 text-white'
+                        }`}
+                      >
+                        CPI : {ps.cpi} |{' '}
+                        {language === 'EN' ? 'Cost Var.:' : 'Écart Coût :'}{' '}
+                        {ps.costVariance >= 0 ? '+' : ''}
+                        {formatCurrency(ps.costVariance, currency, language)}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-700 dark:text-slate-300">
+                    {ps.budgetInterpretation.criticalBudgetSummary}
+                  </p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                    {ps.budgetInterpretation.evmAndVarianceSummary}
+                  </p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">
+                    {ps.budgetInterpretation.financialSteeringSummary}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {pertViewMode === 'graph' ? (
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm overflow-auto max-h-[70vh]">
+                <div
+                  style={{
+                    transform: `scale(${pertZoom})`,
+                    transformOrigin: 'top left',
+                    width: svgWidth * pertZoom,
+                    height: svgHeight * pertZoom
+                  }}
+                >
+                  <svg width={svgWidth} height={svgHeight} className="overflow-visible">
+                    <defs>
+                      <marker
+                        id="arrow-bud-normal"
+                        markerWidth="8"
+                        markerHeight="8"
+                        refX="6"
+                        refY="4"
+                        orient="auto"
+                      >
+                        <path d="M0,0 L8,4 L0,8 Z" fill="#0d9488" />
+                      </marker>
+                      <marker
+                        id="arrow-bud-crit"
+                        markerWidth="8"
+                        markerHeight="8"
+                        refX="6"
+                        refY="4"
+                        orient="auto"
+                      >
+                        <path d="M0,0 L8,4 L0,8 Z" fill="#ea580c" />
+                      </marker>
+                    </defs>
+
+                    {/* Dependency Edges for Budgetary PERT */}
+                    {allNodes.map(node => {
+                      if (!node.antecedentId || node.antecedentId === '—') return null;
+                      const from = nodePositions.get(node.antecedentId);
+                      const to = nodePositions.get(node.id);
+                      if (!from || !to) return null;
+                      const predNode = allNodes.find(n => n.id === node.antecedentId);
+                      const isCritEdge = node.isBudgetCritical && predNode?.isBudgetCritical;
+
+                      const x1 = from.x + 195;
+                      const y1 = from.y + 49;
+                      const x2 = to.x;
+                      const y2 = to.y + 49;
+                      const midX = (x1 + x2) / 2;
+
+                      return (
+                        <path
+                          key={`bud-${node.antecedentId}->${node.id}`}
+                          d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
+                          fill="none"
+                          stroke={isCritEdge ? '#ea580c' : '#0d9488'}
+                          strokeWidth={isCritEdge ? 3 : 1.8}
+                          strokeDasharray={isCritEdge ? undefined : '4 2'}
+                          markerEnd={
+                            isCritEdge ? 'url(#arrow-bud-crit)' : 'url(#arrow-bud-normal)'
+                          }
+                        />
+                      );
+                    })}
+
+                    {/* Budgetary PERT Nodes */}
+                    {allNodes.map(node => {
+                      const pos = nodePositions.get(node.id);
+                      if (!pos) return null;
+                      const budDisp = Math.round(convertFromFCFA(node.budget, currency)).toLocaleString('fr-FR');
+                      const decDisp = Math.round(convertFromFCFA(node.montantDecaissement, currency)).toLocaleString('fr-FR');
+                      const evDisp = Math.round(convertFromFCFA(node.valeurAcquise, currency)).toLocaleString('fr-FR');
+                      const crDisp = Math.round(convertFromFCFA(node.coutReel, currency)).toLocaleString('fr-FR');
+                      const cvDisp = Math.round(convertFromFCFA(node.ecartCout, currency)).toLocaleString('fr-FR');
+                      const isOverrun = node.ecartCout < 0;
+
+                      return (
+                        <g
+                          key={`bud-node-${node.id}`}
+                          transform={`translate(${pos.x}, ${pos.y})`}
+                        >
+                          <rect
+                            width={195}
+                            height={98}
+                            rx={10}
+                            fill={isOverrun ? '#fff1f2' : node.isCritical ? '#fff7ed' : '#f0fdf4'}
+                            stroke={isOverrun ? '#e11d48' : node.isCritical ? '#ea580c' : '#0d9488'}
+                            strokeWidth={node.isBudgetCritical ? 2.5 : 1.5}
+                          />
+                          <text
+                            x={10}
+                            y={17}
+                            fontSize={10.5}
+                            fontWeight="900"
+                            fill="#9a3412"
+                          >
+                            {node.code} · {node.progresBudget}%
+                          </text>
+                          <text
+                            x={116}
+                            y={17}
+                            fontSize={8.5}
+                            fontWeight="900"
+                            fill={isOverrun ? '#e11d48' : node.isCritical ? '#ea580c' : '#0d9488'}
+                          >
+                            {isOverrun
+                              ? language === 'EN'
+                                ? 'OVERRUN'
+                                : 'DÉPASSEMENT'
+                              : node.isCritical
+                              ? language === 'EN'
+                                ? 'CRIT. BUDG'
+                                : 'BUDG. CRIT.'
+                              : language === 'EN'
+                              ? 'ON TRACK'
+                              : 'MAÎTRISÉ'}
+                          </text>
+                          <text x={10} y={32} fontSize={9} fill="#334155">
+                            {node.name.length > 26
+                              ? `${node.name.slice(0, 26)}…`
+                              : node.name}
+                          </text>
+                          <line
+                            x1={8}
+                            y1={39}
+                            x2={187}
+                            y2={39}
+                            stroke="#cbd5e1"
+                            strokeWidth={1}
+                          />
+                          <text x={10} y={53} fontSize={8.5} fontWeight="bold" fill="#0f172a">
+                            Budg: {budDisp} | Déc: {decDisp}
+                          </text>
+                          <text x={10} y={67} fontSize={8.5} fill="#0f172a">
+                            VA: {evDisp} | CR: {crDisp}
+                          </text>
+                          <text
+                            x={10}
+                            y={82}
+                            fontSize={8.5}
+                            fontWeight="bold"
+                            fill={isOverrun ? '#e11d48' : '#059669'}
+                          >
+                            Écart (VA-CR): {node.ecartCout >= 0 ? '+' : ''}
+                            {cvDisp} {currency}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              </div>
+            ) : (
+              /* Budgetary PERT Table */
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto">
+                <table className="w-full border-collapse table-compact">
+                  <thead>
+                    <tr className="bg-orange-700 text-white">
+                      <th className="text-left">Code</th>
+                      <th className="text-left">
+                        {language === 'EN' ? 'Activity / Milestone' : 'Activité / Jalon'}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'Predec.' : 'Antécéd.'}
+                      </th>
+                      <th className="text-left">
+                        {language === 'EN' ? 'Preceding Chain' : 'Précéd. (Chaîne)'}
+                      </th>
+                      <th className="text-right">Budget ({currency})</th>
+                      <th className="text-right">
+                        {language === 'EN' ? `Disbursed (${currency})` : `Décaissement (${currency})`}
+                      </th>
+                      <th className="text-right">
+                        {language === 'EN' ? `Earned Value (${currency})` : `Valeur Acquise (${currency})`}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'Budget Prog.' : 'Progrès Budget'}
+                      </th>
+                      <th className="text-right">
+                        {language === 'EN' ? `Actual Cost (${currency})` : `Coût Réel (${currency})`}
+                      </th>
+                      <th className="text-right">
+                        {language === 'EN' ? `Cost Var. (${currency})` : `Écart Coût (${currency})`}
+                      </th>
+                      <th className="text-right">
+                        {language === 'EN' ? `Cumul. Path (${currency})` : `Cumul PERT (${currency})`}
+                      </th>
+                      <th className="text-center">
+                        {language === 'EN' ? 'Budget Criticality' : 'Criticité Budgétaire'}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {allNodes.map(node => {
+                      const isOverrun = node.ecartCout < 0;
+                      return (
+                        <tr
+                          key={`bud-row-${node.id}`}
+                          className={
+                            isOverrun
+                              ? 'bg-rose-50/60 dark:bg-rose-950/30 font-bold'
+                              : node.isCritical
+                              ? 'bg-amber-50/60 dark:bg-amber-950/30 font-bold'
+                              : 'bg-white dark:bg-slate-900'
+                          }
+                        >
+                          <td className="font-mono text-orange-700 dark:text-orange-400 font-black">
+                            {node.code}
+                          </td>
+                          <td className="text-slate-900 dark:text-white whitespace-normal break-words">
+                            <div>{node.name}</div>
+                            {node.bailleur && node.bailleur !== '—' && (
+                              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                                {language === 'EN' ? 'Donor:' : 'Bailleur :'} {node.bailleur}
+                              </div>
+                            )}
+                          </td>
+                          <td className="text-center font-mono text-slate-700 dark:text-slate-300">
+                            {node.antecedentCode}
+                          </td>
+                          <td className="font-mono text-slate-600 dark:text-slate-400">
+                            {node.precedingChainCodes}
+                          </td>
+                          <td className="text-right font-mono font-bold">
+                            {formatCurrency(node.budget, currency, language)}
+                          </td>
+                          <td className="text-right font-mono">
+                            {formatCurrency(node.montantDecaissement, currency, language)}
+                          </td>
+                          <td className="text-right font-mono text-emerald-700 dark:text-emerald-400 font-bold">
+                            {formatCurrency(node.valeurAcquise, currency, language)}
+                          </td>
+                          <td className="text-center font-mono font-black text-orange-600 dark:text-orange-400">
+                            {node.progresBudget}%
+                          </td>
+                          <td className="text-right font-mono">
+                            {formatCurrency(node.coutReel, currency, language)}
+                          </td>
+                          <td
+                            className={`text-right font-mono font-black ${
+                              node.ecartCout >= 0
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-rose-600 dark:text-rose-400'
+                            }`}
+                          >
+                            {node.ecartCout >= 0 ? '+' : ''}
+                            {formatCurrency(node.ecartCout, currency, language)}
+                          </td>
+                          <td className="text-right font-mono text-slate-600 dark:text-slate-400">
+                            {formatCurrency(node.cumBudgetES, currency, language)}
+                          </td>
+                          <td className="text-center">
+                            {isOverrun ? (
+                              <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black">
+                                {language === 'EN' ? 'OVERRUN' : 'DÉPASSEMENT'}
+                              </span>
+                            ) : node.isCritical ? (
+                              <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[9px] font-black">
+                                {language === 'EN' ? 'CRITICAL' : 'CRITIQUE'}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-emerald-600 font-bold">
+                                {language === 'EN' ? 'Controlled' : 'Maîtrisé'}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* =====================================================================
+            RAPPORT CONDENSÉ (PERT DES TÂCHES + PERT BUDGÉTAIRE)
+           ===================================================================== */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border-2 border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2.5">
+            <div>
+              <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                {language === 'EN'
+                  ? 'Condensed PERT Report (Task PERT + Budgetary PERT)'
+                  : 'Rapport Condensé PERT (Synthèse PERT des Tâches + PERT Budgétaire)'}
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {language === 'EN'
+                  ? 'Consolidated schedule and financial network synthesis automatically included in official reports'
+                  : 'Synthèse consolidée ordonnancement & exécution financière automatiquement intégrée dans les rapports'}
+              </p>
             </div>
           </div>
-        ) : (
-          /* PERT Table: Code | Activité / Jalon | Antécéd. | Précéd. */
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto">
-            <table className="w-full border-collapse table-compact">
-              <thead>
-                <tr className="bg-[#0c4a6e] text-white">
-                  <th className="text-left">Code</th>
-                  <th className="text-left">
-                    {language === 'EN' ? 'Activity / Milestone' : 'Activité / Jalon'}
-                  </th>
-                  <th className="text-center">
-                    {language === 'EN' ? 'Predec.' : 'Antécéd.'}
-                  </th>
-                  <th className="text-left">
-                    {language === 'EN'
-                      ? 'Preceding (Full Chain)'
-                      : 'Précéd. (Chaîne Complète)'}
-                  </th>
-                  <th className="text-center">
-                    {language === 'EN' ? 'Duration' : 'Durée'}
-                  </th>
-                  <th className="text-center">
-                    {language === 'EN' ? 'ES (Early)' : 'ES (Tôt)'}
-                  </th>
-                  <th className="text-center">
-                    {language === 'EN' ? 'EF (Early)' : 'EF (Tôt)'}
-                  </th>
-                  <th className="text-center">
-                    {language === 'EN' ? 'LS (Late)' : 'LS (Tard)'}
-                  </th>
-                  <th className="text-center">
-                    {language === 'EN' ? 'LF (Late)' : 'LF (Tard)'}
-                  </th>
-                  <th className="text-center">
-                    {language === 'EN' ? 'Total Float' : 'Marge Totale'}
-                  </th>
-                  <th className="text-center">
-                    {language === 'EN' ? 'Critical Path' : 'Chemin Critique'}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                {allNodes.map(node => (
-                  <tr
-                    key={node.id}
-                    className={
-                      node.isCritical
-                        ? 'bg-amber-50/60 dark:bg-amber-950/30 font-bold'
-                        : 'bg-white dark:bg-slate-900'
-                    }
-                  >
-                    <td className="font-mono text-[#0c4a6e] dark:text-[#90D5FF] font-black">
-                      {node.code}
-                    </td>
-                    <td className="text-slate-900 dark:text-white whitespace-normal break-words">
-                      <div>{node.name}</div>
-                      {node.libelleRisque && (
-                        <div className="text-[10px] font-semibold text-orange-600 dark:text-orange-400 mt-0.5">
-                          {language === 'EN' ? 'Risk:' : 'Risque :'} {node.libelleRisque}
-                        </div>
-                      )}
-                    </td>
-                    <td className="text-center font-mono text-slate-700 dark:text-slate-300">
-                      {node.antecedentCode}
-                    </td>
-                    <td className="font-mono text-slate-600 dark:text-slate-400">
-                      {node.precedingChainCodes}
-                    </td>
-                    <td className="text-center font-mono">{node.duration}j</td>
-                    <td className="text-center font-mono">J+{node.es}</td>
-                    <td className="text-center font-mono">J+{node.ef}</td>
-                    <td className="text-center font-mono">J+{node.ls}</td>
-                    <td className="text-center font-mono">J+{node.lf}</td>
-                    <td className="text-center font-mono">{node.totalFloat}j</td>
-                    <td className="text-center">
-                      {node.isCritical ? (
-                        <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[9px] font-black">
-                          {language === 'EN' ? 'CRITICAL' : 'CRITIQUE'}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-emerald-600 font-bold">
-                          {language === 'EN' ? 'Flexible' : 'Souple'}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {pertSummaries.map(ps => (
+              <div
+                key={`cond-${ps.projectId}`}
+                className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs"
+              >
+                <div className="font-black text-[#0c4a6e] dark:text-[#90D5FF] uppercase flex flex-wrap items-center justify-between gap-1">
+                  <span>{ps.projectName}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-black">
+                    {ps.projectDuration}j · {formatCurrency(ps.totalBudget, currency, language)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-700 dark:text-slate-300 whitespace-pre-line leading-relaxed">
+                  {ps.condensedReportSummary}
+                </p>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
       </div>
     );
   };
@@ -3474,14 +3874,14 @@ export function App() {
             <Kanban className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#0284c7] dark:text-[#90D5FF] shrink-0" />
             <span>
               {language === 'EN'
-                ? 'Interactive Kanban Board (Driven by Real Execution)'
-                : 'Tableau Kanban Interactif (Basé sur l’Exécution Réelle)'}
+                ? 'Kanban Board (Read-Only — Driven by Real Execution)'
+                : 'Tableau Kanban (Consultation Seule — Basé sur l’Exécution Réelle)'}
             </span>
           </h2>
           <p className="text-[9.5px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
             {language === 'EN'
-              ? 'Move a task or milestone from one status column to another: its planned dates automatically recalculate while preserving its duration and predecessor logic.'
-              : 'Déplacez une tâche ou un jalon d’une colonne de statut vers une autre : ses dates prévues se recalculent automatiquement en conservant sa durée et la logique des antécédents.'}
+              ? 'Read-only visual tracking of tasks and milestones automatically synchronized with execution dates and status.'
+              : 'Suivi visuel en lecture seule des tâches et jalons synchronisé automatiquement avec les dates d’exécution et le statut opérationnel.'}
           </p>
         </div>
 
@@ -3498,9 +3898,9 @@ export function App() {
                 className="min-w-[205px] w-[205px] sm:min-w-[245px] sm:w-[245px] lg:min-w-0 lg:w-auto shrink-0 bg-slate-100/80 dark:bg-slate-900/70 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden"
               >
                 <div
-                  className={`px-2.5 py-2 sm:px-3 sm:py-2.5 ${col.headerBg} flex items-center justify-between font-black text-[10px] sm:text-xs uppercase`}
+                  className={`px-2.5 py-2 sm:px-3 sm:py-2.5 ${col.headerBg} flex items-center justify-between gap-2 font-black text-[10px] sm:text-xs uppercase`}
                 >
-                  <span className="truncate">{col.title}</span>
+                  <span className="whitespace-normal break-words">{col.title}</span>
                   <span className="px-1.5 sm:px-2 py-0.5 rounded-full bg-black/20 text-[9px] sm:text-[10px] shrink-0">
                     {colRows.length}
                   </span>
@@ -3508,7 +3908,7 @@ export function App() {
 
                 <div className="p-2 sm:p-2.5 space-y-2 sm:space-y-2.5 flex-1 max-h-[65vh] overflow-y-auto">
                   {colRows.map(r => {
-                    const { task, code, projectId, metrics } = r;
+                    const { task, code, metrics } = r;
                     const isJalon = task.type === 'jalon';
 
                     return (
@@ -3535,44 +3935,24 @@ export function App() {
                           </span>
                         </div>
 
-                        <div className="text-[10.5px] sm:text-xs font-extrabold text-slate-900 dark:text-white leading-snug">
+                        <div className="text-[10.5px] sm:text-xs font-extrabold text-slate-900 dark:text-white leading-snug whitespace-normal break-words">
                           {isJalon ? `◆ ${task.name}` : task.name}
                         </div>
                         {task.libelleRisque && (
-                          <div className="text-[9.5px] font-semibold text-orange-700 dark:text-orange-300 leading-snug">
+                          <div className="text-[9.5px] font-semibold text-orange-700 dark:text-orange-300 leading-snug whitespace-normal break-words">
                             {language === 'EN' ? 'Risk:' : 'Risque :'} {task.libelleRisque}
                           </div>
                         )}
 
                         <div className="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 space-y-0.5">
-                          <div className="truncate">
+                          <div className="whitespace-normal break-words">
                             {language === 'EN' ? 'Assignee:' : 'Réalisateur :'}{' '}
-                            {task.assignee}
+                            {normalizeRaciFieldList(task.assignee || '')}
                           </div>
                           <div>
                             {language === 'EN' ? 'Planned:' : 'Prévu:'}{' '}
                             {task.startDate} → {task.endDate}
                           </div>
-                        </div>
-
-                        <div className="pt-1.5 sm:pt-2 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-1">
-                          {columns
-                            .filter(c => c.status !== col.status)
-                            .map(targetCol => (
-                              <button
-                                key={targetCol.status}
-                                onClick={() =>
-                                  handleMoveTaskInKanban(
-                                    projectId,
-                                    task.id,
-                                    targetCol.status
-                                  )
-                                }
-                                className="px-1.5 sm:px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 hover:bg-[#90D5FF] hover:text-slate-950 text-[8.5px] sm:text-[9px] font-bold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
-                              >
-                                → {targetCol.title}
-                              </button>
-                            ))}
                         </div>
                       </div>
                     );
@@ -4014,6 +4394,12 @@ export function App() {
               onAddTaskInPhase={handleAddTaskInPhase}
               onUpdateTask={handleUpdateTask}
               onDeleteTask={handleDeleteTask}
+              connectedUserName={
+                userProfile?.fullName ||
+                authUser?.displayName ||
+                authUser?.email ||
+                ''
+              }
             />
           )}
 

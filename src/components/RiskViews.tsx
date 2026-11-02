@@ -9,11 +9,12 @@ import {
   Plus, Save, Star, Trash2, TrendingUp, UserCheck, X
 } from 'lucide-react';
 import { Dossier, Task, LanguageCode, CurrencyCode } from '../types';
-import { STANDARD_PHASES, getTodayISO, computeEffectiveStatus } from '../pertUtils';
+import { STANDARD_PHASES, getTodayISO, computeEffectiveStatus, computeTaskMetrics } from '../pertUtils';
 import { convertFromFCFA, convertToFCFA } from '../i18n';
+import { normalizeRaciActorToPosition, normalizeRaciFieldList } from '../db';
 
 export const RISK_DROPDOWNS = {
-  riskStatus: ['nouveau', 'en traitement', 'bloqué', 'traité'],
+  riskStatus: ['à traiter', 'en traitement', 'bloqué', 'traité', 'nouveau'],
   pestelScores: ['1/5', '2/5', '3/5', '4/5', '5/5'],
   nature: [
     'politique/ administratif',
@@ -45,6 +46,7 @@ export function getTranslatedDropdownLabel(value: string, lang: LanguageCode): s
   if (lang !== 'EN') return value;
   const lower = (value || '').toLowerCase().trim();
   const map: Record<string, string> = {
+    'à traiter': 'to treat',
     'nouveau': 'new',
     'en traitement': 'in progress',
     'bloqué': 'blocked',
@@ -135,11 +137,101 @@ export function normalizeFaiblesseValue(
   return 'ressource humaine';
 }
 
+// Col 7 [CONSÉQUENCE SI AVÉRÉ] : Pré-rempli automatiquement selon Budget vs Coût Réel et Écart Fin
+export function deriveAutoConsequence(
+  task: Task,
+  rawCoutReel: number,
+  taskBudgetFCFA: number,
+  ecartFinDays: number
+): 'cout' | 'délai' | 'qualité' {
+  if (task.consequence && task.consequence.trim() !== '') {
+    const clean = task.consequence.toLowerCase().trim();
+    if (clean === 'cout' || clean === 'coût') return 'cout';
+    if (clean === 'délai' || clean === 'delai') return 'délai';
+    if (clean === 'qualité' || clean === 'qualite') return 'qualité';
+  }
+  if (rawCoutReel > taskBudgetFCFA && taskBudgetFCFA > 0) {
+    return 'cout';
+  }
+  if (ecartFinDays > 0) {
+    return 'délai';
+  }
+  return 'qualité';
+}
+
+// Col 11 [GESTIONNAIRE DU RISQUE] : Récupère automatiquement le 1er poste de RESPONSABLES / RACI (modifiable)
+export function getDefaultRiskManager(task: Task): string {
+  if (task.gestionnaireRisque !== undefined && task.gestionnaireRisque.trim() !== '') {
+    return normalizeRaciFieldList(task.gestionnaireRisque);
+  }
+  const rawAssignee = normalizeRaciFieldList(
+    [task.assignee, task.raciR, task.responsabilite].filter(Boolean).join(', ')
+  );
+  if (!rawAssignee || rawAssignee === '—') return '';
+  const firstPart = rawAssignee.split(',')[0]?.trim() || rawAssignee;
+  return normalizeRaciActorToPosition(firstPart);
+}
+
+// Col 12 [DÉCIDEUR / PROPRIÉTAIRE] : Récupère automatiquement le poste d'Autorité (A) de la matrice RACI (modifiable)
+export function getDefaultRiskOwner(task: Task): string {
+  if (task.decideurProprietaire !== undefined && task.decideurProprietaire.trim() !== '') {
+    return normalizeRaciFieldList(task.decideurProprietaire);
+  }
+  const rawAuthority = normalizeRaciFieldList(
+    [task.autorite, task.raciA].filter(Boolean).join(', ')
+  );
+  if (!rawAuthority || rawAuthority === '—') return '';
+  return rawAuthority;
+}
+
+// Col 16 [STATUT] : Pré-rempli sur À TRAITER / EN TRAITEMENT, bascule automatiquement sur TRAITÉ si la tâche est Terminée
+export function deriveAutoRiskStatus(
+  task: Task,
+  effStatus: Task['status']
+): string {
+  if (effStatus === 'Terminé') {
+    return 'traité';
+  }
+  if (task.riskStatus && task.riskStatus.trim() !== '') {
+    return task.riskStatus;
+  }
+  if (effStatus === 'Bloqué') {
+    return 'bloqué';
+  }
+  if (effStatus === 'En cours') {
+    return 'en traitement';
+  }
+  return 'à traiter';
+}
+
+// Col 15 [TENDANCE] : Bascule auto sur hausse si ÉCART FIN > 0 ou non terminé, et sur baisse si ACTION PRÉVENTIVE renseignée ou statut TRAITÉ
+export function deriveAutoTendance(
+  task: Task,
+  ecartFinDays: number,
+  effStatus: Task['status'],
+  effectiveRiskStatus: string
+): 'stable' | 'hausse' | 'baisse' {
+  if (task.tendance && task.tendance.trim() !== '') {
+    return task.tendance as 'stable' | 'hausse' | 'baisse';
+  }
+  const hasPreventive = Boolean(task.actionPreventive && task.actionPreventive.trim() !== '');
+  const isTreated =
+    effectiveRiskStatus === 'traité' || (effStatus === 'Terminé' && ecartFinDays <= 0);
+  if (hasPreventive || isTreated) {
+    return 'baisse';
+  }
+  if (ecartFinDays > 0 || effStatus !== 'Terminé') {
+    return 'hausse';
+  }
+  return 'baisse';
+}
+
 // Logique Management des Risques : Remplissage automatique de Probabilité, Gravité et Tendance selon l'Évaluation PESTEL (1/5 à 5/5) et le contexte opérationnel
 export function deriveAutoRiskParameters(
   task: Task,
   pestelScore: number,
-  effStatus: Task['status']
+  effStatus: Task['status'],
+  ecartFinDays = 0
 ): {
   probabilite: 'improbable' | 'peu probable' | 'probable' | 'très probable';
   gravite: 'mineur' | 'majeur' | 'grave' | 'catastrophique';
@@ -147,8 +239,9 @@ export function deriveAutoRiskParameters(
   tendance: 'stable' | 'hausse' | 'baisse';
 } {
   const isJalon = (task.taskOrMilestone || task.type) === 'jalon';
-  const isBlocked = effStatus === 'Bloqué' || task.riskStatus === 'bloqué';
-  const isTreated = effStatus === 'Terminé' || task.riskStatus === 'traité';
+  const rStat = deriveAutoRiskStatus(task, effStatus);
+  const isBlocked = effStatus === 'Bloqué' || rStat === 'bloqué';
+  const isTreated = effStatus === 'Terminé' || rStat === 'traité';
   const highBudget = (Number(task.budget) || 0) >= 25000000;
 
   let autoProb: 'improbable' | 'peu probable' | 'probable' | 'très probable' = 'probable';
@@ -180,19 +273,13 @@ export function deriveAutoRiskParameters(
   const finalProb = (task.probabilite as any) || autoProb;
   const finalGrav = (task.gravite as any) || autoGrav;
   const finalCrit = computeCriticiteFromProbAndGrav(finalProb, finalGrav);
-
-  const autoTendance: 'stable' | 'hausse' | 'baisse' =
-    pestelScore >= 4 || finalCrit === 'tres critique' || finalCrit === 'critique' || isBlocked
-      ? 'hausse'
-      : pestelScore <= 2 || finalCrit === 'faible' || isTreated
-      ? 'baisse'
-      : 'stable';
+  const finalTendance = deriveAutoTendance(task, ecartFinDays, effStatus, rStat);
 
   return {
     probabilite: finalProb,
     gravite: finalGrav,
     criticite: finalCrit,
-    tendance: (task.tendance as any) || autoTendance
+    tendance: finalTendance
   };
 }
 
@@ -208,6 +295,7 @@ interface RiskViewCommonProps {
   onUpdateTask?: (projectId: string, taskId: string, patch: Partial<Task>) => void;
   onDeleteTask?: (projectId: string, taskId: string) => void;
   onNavigateTab?: (tabId: string) => void;
+  connectedUserName?: string;
 }
 
 // Extraction normalisée de toutes les tâches / risques d'un dossier avec filtres
@@ -231,32 +319,49 @@ function useEnrichedRiskTasks(dossier: Dossier, filterAxeId: string, filterProje
 
         (proj.tasks || []).forEach(t => {
           const effStatus = computeEffectiveStatus(t, today);
+          const metrics = computeTaskMetrics(t, today);
           const taskOrMilestone = t.taskOrMilestone || t.type || 'tache';
-          const riskStatus =
-            t.riskStatus ||
-            (effStatus === 'Terminé'
-              ? 'traité'
-              : effStatus === 'En cours'
-              ? 'en traitement'
-              : effStatus === 'Bloqué'
-              ? 'bloqué'
-              : 'nouveau');
-          const dateIdentification = t.dateIdentification || t.startDate || today;
+          const riskStatus = deriveAutoRiskStatus(t, effStatus);
+          const dateIdentification =
+            t.dateIdentification || metrics.effectiveActualStartDate || t.startDate || today;
           const dateResolution =
-            t.dateResolution ||
-            (riskStatus === 'traité' ? t.actualEndDate || t.endDate || '' : '');
+            riskStatus === 'traité'
+              ? t.dateResolution || metrics.effectiveActualEndDate || t.actualEndDate || t.endDate || ''
+              : '';
           const pestelScore = parsePestelScore(t.evaluationPestel);
           const evaluationPestel = `${pestelScore}/5`;
-          const autoParams = deriveAutoRiskParameters(t, pestelScore, effStatus);
+          const autoParams = deriveAutoRiskParameters(
+            t,
+            pestelScore,
+            effStatus,
+            metrics.ecartFinDays
+          );
           const probabilite = autoParams.probabilite;
           const gravite = autoParams.gravite;
           const criticite = autoParams.criticite;
           const nature = t.categorie || t.nature || 'technologie / technique';
-          const consequence = t.consequence || 'qualité';
+          const taskBudgetFCFA = Number(t.budget) || 0;
+          const rawCoutReel =
+            t.coutReel !== undefined
+              ? t.coutReel
+              : t.montantDecaissement !== undefined && t.montantDecaissement > 0
+              ? t.montantDecaissement
+              : effStatus === 'Terminé'
+              ? taskBudgetFCFA
+              : effStatus === 'En cours'
+              ? Math.round(taskBudgetFCFA * 0.5)
+              : 0;
+          const consequence = deriveAutoConsequence(
+            t,
+            rawCoutReel,
+            taskBudgetFCFA,
+            metrics.ecartFinDays
+          );
           const faiblesse = normalizeFaiblesseValue(t.faiblesse);
           const hasExplicitFaiblesse = Boolean(t.faiblesse && t.faiblesse.trim() !== '');
           const tendance = autoParams.tendance;
           const activity = t.activity || t.name;
+          const gestionnaireRisque = getDefaultRiskManager(t);
 
           rows.push({
             ...t,
@@ -276,6 +381,7 @@ function useEnrichedRiskTasks(dossier: Dossier, filterAxeId: string, filterProje
             hasExplicitFaiblesse,
             tendance,
             activity,
+            gestionnaireRisque,
             projectName: proj.name,
             axeName: axe.name,
             axeId: axe.id,
@@ -417,8 +523,14 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
       const nat = (t.categorie || t.nature || 'technologie').toLowerCase().trim();
       const score = parsePestelScore(t.evaluationPestel);
       const sec =
-        pestelSectors.find(s => nat.includes(s.key) || (s.key === 'légal' && nat.includes('legal'))) ||
-        pestelSectors[3];
+        pestelSectors.find(
+          s =>
+            nat.includes(s.key) ||
+            (s.key === 'economique' && (nat.includes('économique') || nat.includes('economi'))) ||
+            (s.key === 'technologie' && nat.includes('techno')) ||
+            (s.key === 'environnement' && (nat.includes('environ') || nat.includes('écologi') || nat.includes('ecologi'))) ||
+            (s.key === 'légal' && (nat.includes('legal') || nat.includes('juridique')))
+        ) || pestelSectors[3];
       sec.count++;
       sec.scoreSum += score;
 
@@ -727,7 +839,7 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
             <Activity className="w-3.5 h-3.5" />
             {isEN ? 'ISO 31000 & RBM Method' : 'ISO 31000 & Méthode GAR'}
           </div>
-          <h2 className="text-2xl font-black tracking-tight">
+          <h2 className="text-base sm:text-lg font-black tracking-tight">
             {isEN ? 'Risk Dashboard' : 'Tableau de Bord des Risques'}
           </h2>
           <p className="text-xs text-orange-100 font-medium mt-1">
@@ -804,40 +916,40 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
         </div>
       </div>
 
-      {/* 4 TOP KPI CARDS (Exact Screenshot 1 layout) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="px-5 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs flex items-center justify-between">
-          <span className="text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+      {/* 4 TOP KPI CARDS (Responsive & compact typography on mobile/tablet) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        <div className="px-3.5 py-3 sm:px-5 sm:py-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl shadow-xs flex items-center justify-between gap-2">
+          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 leading-tight">
             {isEN ? 'TOTAL RISKS' : 'RISQUES TOTAUX'}
           </span>
-          <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white">
+          <span className="text-base sm:text-xl font-black text-slate-900 dark:text-white shrink-0">
             {stats.total}
           </span>
         </div>
 
-        <div className="px-5 py-4 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700/80 rounded-2xl shadow-xs flex items-center justify-between">
-          <span className="text-[11px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+        <div className="px-3.5 py-3 sm:px-5 sm:py-3.5 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700/80 rounded-xl sm:rounded-2xl shadow-xs flex items-center justify-between gap-2">
+          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400 leading-tight">
             {isEN ? 'TREATED RISKS' : 'RISQUES TRAITÉS'}
           </span>
-          <span className="text-2xl sm:text-3xl font-black text-emerald-700 dark:text-emerald-400">
+          <span className="text-base sm:text-xl font-black text-emerald-700 dark:text-emerald-400 shrink-0">
             {stats.completed}
           </span>
         </div>
 
-        <div className="px-5 py-4 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700/80 rounded-2xl shadow-xs flex items-center justify-between">
-          <span className="text-[11px] font-black uppercase tracking-wider text-rose-700 dark:text-rose-400">
+        <div className="px-3.5 py-3 sm:px-5 sm:py-3.5 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700/80 rounded-xl sm:rounded-2xl shadow-xs flex items-center justify-between gap-2">
+          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-rose-700 dark:text-rose-400 leading-tight">
             {isEN ? 'BLOCKED RISKS' : 'RISQUES BLOQUÉS'}
           </span>
-          <span className="text-2xl sm:text-3xl font-black text-rose-600 dark:text-rose-400">
+          <span className="text-base sm:text-xl font-black text-rose-600 dark:text-rose-400 shrink-0">
             {stats.blocked}
           </span>
         </div>
 
-        <div className="px-5 py-4 bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700/80 rounded-2xl shadow-xs flex items-center justify-between">
-          <span className="text-[11px] font-black uppercase tracking-wider text-orange-800 dark:text-orange-400">
+        <div className="px-3.5 py-3 sm:px-5 sm:py-3.5 bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700/80 rounded-xl sm:rounded-2xl shadow-xs flex items-center justify-between gap-2">
+          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-orange-800 dark:text-orange-400 leading-tight">
             {isEN ? 'CRITICAL RISKS' : 'RISQUES CRITIQUES'}
           </span>
-          <span className="text-2xl sm:text-3xl font-black text-orange-600 dark:text-orange-400">
+          <span className="text-base sm:text-xl font-black text-orange-600 dark:text-orange-400 shrink-0">
             {stats.critical}
           </span>
         </div>
@@ -916,8 +1028,28 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
 
           <div className="my-3 space-y-2">
             {computedStats.pestelSectors.map(sec => {
-              const barPct = stats.total > 0 ? Math.round((sec.count / stats.total) * 100) : 0;
-              const avgNote = sec.count > 0 ? `${Math.round(sec.scoreSum / sec.count)}/5` : '-';
+              const avgVal = sec.count > 0 ? Number((sec.scoreSum / sec.count).toFixed(1)) : 0;
+              const barPct = sec.count > 0 ? Math.round((avgVal / 5) * 100) : 0;
+              const avgNote =
+                sec.count > 0
+                  ? `${Number.isInteger(avgVal) ? avgVal : avgVal.toFixed(1)}/5`
+                  : '-';
+              const barColorClass =
+                avgVal >= 4
+                  ? 'bg-red-600'
+                  : avgVal >= 3
+                  ? 'bg-orange-600'
+                  : avgVal >= 2
+                  ? 'bg-amber-500'
+                  : 'bg-emerald-500';
+              const badgeColorClass =
+                sec.count === 0
+                  ? 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                  : avgVal >= 4
+                  ? 'bg-red-50 dark:bg-red-950/60 border-red-300 dark:border-red-700 text-red-700 dark:text-red-300'
+                  : avgVal >= 3
+                  ? 'bg-orange-50 dark:bg-orange-950/60 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300'
+                  : 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300';
               return (
                 <div key={sec.key} className="flex items-center gap-2.5">
                   <span className="w-24 text-right text-[11px] font-medium text-slate-600 dark:text-slate-300 truncate">
@@ -926,7 +1058,7 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
                   <div className="flex-1 h-4 bg-slate-100 dark:bg-slate-800 rounded-md overflow-hidden">
                     {sec.count > 0 && (
                       <div
-                        className="h-full bg-orange-600 rounded-md transition-all duration-500"
+                        className={`h-full ${barColorClass} rounded-md transition-all duration-500`}
                         style={{ width: `${Math.max(12, barPct)}%` }}
                       />
                     )}
@@ -935,11 +1067,7 @@ export const RiskDashboardView: React.FC<RiskViewCommonProps> = ({
                     {sec.count}
                   </span>
                   <span
-                    className={`min-w-[28px] text-center px-1.5 py-0.5 rounded border text-[10px] font-black ${
-                      sec.count > 0
-                        ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300'
-                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-                    }`}
+                    className={`min-w-[34px] text-center px-1.5 py-0.5 rounded border text-[10px] font-black ${badgeColorClass}`}
                   >
                     {avgNote}
                   </span>
@@ -2272,7 +2400,8 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
   setFilterProjectId,
   onUpdateTask,
   language = 'FR',
-  currency = 'FCFA'
+  currency = 'FCFA',
+  connectedUserName = ''
 }) => {
   const isEN = language === 'EN';
   const [filterPhase, setFilterPhase] = useState<string>('ALL');
@@ -2297,10 +2426,11 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
     axes.forEach(ax => {
       (ax.projects || []).forEach(pr => {
         (pr.tasks || []).forEach(tk => {
-          if (tk.assignee && tk.assignee.trim()) {
-            tk.assignee
+          const combinedR = [tk.assignee, tk.raciR].filter(Boolean).join(', ');
+          if (combinedR && combinedR.trim()) {
+            combinedR
               .split(',')
-              .map(s => s.trim())
+              .map(s => normalizeRaciActorToPosition(s.trim()))
               .filter(Boolean)
               .forEach(actor => set.add(actor));
           }
@@ -2309,6 +2439,29 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
     });
     return Array.from(set).sort();
   }, [axes]);
+
+  const allDecisionMakers = useMemo(() => {
+    const set = new Set<string>();
+    if (connectedUserName && connectedUserName.trim()) {
+      set.add(normalizeRaciActorToPosition(connectedUserName.trim()));
+    }
+    axes.forEach(ax => {
+      (ax.projects || []).forEach(pr => {
+        (pr.tasks || []).forEach(tk => {
+          [tk.autorite, tk.raciA, tk.decideurProprietaire, tk.assignee, tk.raciR].forEach(val => {
+            if (val && val.trim() && val.trim() !== '—') {
+              val
+                .split(',')
+                .map(s => normalizeRaciActorToPosition(s.trim()))
+                .filter(Boolean)
+                .forEach(actor => set.add(actor));
+            }
+          });
+        });
+      });
+    });
+    return Array.from(set).sort();
+  }, [axes, connectedUserName]);
 
   // Code generation computed BEFORE phase / status / assignee filters, synchronized across projects
   const allEnrichedTasks = useMemo(() => {
@@ -2382,6 +2535,38 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
 
   return (
     <div className="space-y-4 pb-12 font-sans animate-in fade-in duration-300">
+      <datalist id="risk-managers-datalist">
+        {allAssignees.map(actor => (
+          <option key={actor} value={actor} />
+        ))}
+      </datalist>
+      <datalist id="risk-owners-datalist">
+        {allDecisionMakers.map(actor => (
+          <option key={actor} value={actor} />
+        ))}
+      </datalist>
+
+      <datalist id="risk-declarants-datalist">
+        {connectedUserName && connectedUserName.trim() && (
+          <option value={connectedUserName.trim()} />
+        )}
+        {(dossier.categorizedActors || []).map(actor => (
+          <option
+            key={`decl-${actor.id}`}
+            value={
+              actor.fullName
+                ? `${actor.fullName} (${actor.name})`
+                : actor.organization
+                ? `${actor.name} — ${actor.organization}`
+                : actor.name
+            }
+          />
+        ))}
+        {allAssignees.map(actor => (
+          <option key={`decl-pos-${actor}`} value={actor} />
+        ))}
+      </datalist>
+
       {/* 5 Synchronized Filter Dropdowns */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-2.5 shadow-xs">
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -2494,128 +2679,220 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
       {/* Main Table */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-auto max-h-[75vh] sm:max-h-[calc(100vh-185px)] relative">
-          <table className="w-full text-left text-xs whitespace-nowrap border-separate border-spacing-0" style={{ minWidth: '3800px' }}>
+          <table className="w-max min-w-full text-left text-[10px] whitespace-normal border-separate border-spacing-0 unified-cell-font-table" style={{ minWidth: '4350px' }}>
             <thead className="bg-[#c2410c] text-white shadow-md sticky top-0 z-40">
               <tr className="bg-[#c2410c] text-white">
                 {/* 1. TYPE (Locked Col 1) */}
                 <th
-                  rowSpan={2}
                   style={{ position: 'sticky', top: 0, left: 0 }}
-                  className="sticky top-0 left-0 z-50 bg-[#c2410c] px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-[48px] min-w-[48px] max-w-[48px]"
+                  className="sticky top-0 left-0 z-50 bg-[#c2410c] px-1.5 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[48px] min-w-[48px] max-w-[48px]"
                 >
                   {isEN ? 'TYPE' : 'TYPE'}
                 </th>
                 {/* 2. ACTIVITÉ / TÂCHE (Locked Col 2) */}
                 <th
-                  rowSpan={2}
                   style={{ position: 'sticky', top: 0, left: 48 }}
-                  className="sticky top-0 left-[48px] z-50 bg-[#c2410c] px-3 py-3 border-b-2 border-orange-200 border-r-2 border-orange-300 text-left text-[10px] uppercase w-[116px] min-w-[116px] max-w-[116px] sm:w-[136px] sm:min-w-[136px] sm:max-w-[136px] shadow-[3px_0_6px_rgba(0,0,0,0.28)]"
+                  className="sticky top-0 left-[48px] z-50 bg-[#c2410c] px-2 py-2.5 border-b-2 border-orange-200 border-r-2 border-orange-300 text-left text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[135px] min-w-[135px] max-w-[135px] sm:w-[155px] sm:min-w-[155px] sm:max-w-[155px] shadow-[3px_0_6px_rgba(0,0,0,0.28)]"
                 >
                   {isEN ? 'ACTIVITY / TASK' : 'ACTIVITÉ / TÂCHE'}
                 </th>
-                {/* NEW 1: Livrable */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-left text-[10px] uppercase w-32 min-w-[128px]">
+                {/* Livrable */}
+                <th className="px-2 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-left text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[125px] min-w-[125px] max-w-[125px]">
                   {isEN ? 'DELIVERABLE' : 'LIVRABLE'}
                 </th>
-                {/* NEW 2: Bailleur / Financement */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-left text-[10px] uppercase w-36 min-w-[140px]">
+                {/* Bailleur / Financement */}
+                <th className="px-2 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-left text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[130px] min-w-[130px] max-w-[130px]">
                   {isEN ? 'DONOR / FUNDING' : 'BAILLEUR / FINANCEMENT'}
                 </th>
-                {/* NEW 3: Budget */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-right text-[10px] uppercase w-28 min-w-[110px]">
-                  BUDGET ({currency})
-                </th>
-                {/* NEW 6: Déb. Prév */}
-                <th rowSpan={2} className="px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-28 min-w-[110px]">
+                {/* Timeline / Exécution : Déb. Prév */}
+                <th className="px-1.5 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[88px] min-w-[88px] max-w-[88px]">
                   {isEN ? 'PLAN. START' : 'DÉB. PRÉV'}
                 </th>
-                {/* NEW 7: Fin Prév */}
-                <th rowSpan={2} className="px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-28 min-w-[110px]">
+                {/* Timeline / Exécution : Fin Prév */}
+                <th className="px-1.5 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[88px] min-w-[88px] max-w-[88px]">
                   {isEN ? 'PLAN. END' : 'FIN PRÉV'}
                 </th>
-                {/* NEW 8: Date de décaissement */}
-                <th rowSpan={2} className="px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-28 min-w-[112px]">
-                  {isEN ? 'DISBURSEMENT DATE' : 'DATE DE DÉCAISSEMENT'}
+                {/* Timeline / Exécution : Durée */}
+                <th className="px-1.5 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[62px] min-w-[62px] max-w-[62px]">
+                  {isEN ? 'DUR.' : 'DURÉE'}
                 </th>
-                {/* NEW 9: Décaissement (réduit) */}
-                <th rowSpan={2} className="px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-right text-[10px] uppercase w-24 min-w-[96px] max-w-[96px]">
-                  {isEN ? `DISBURSEMENT (${currency})` : `DÉCAISSEMENT (${currency})`}
+                {/* Timeline / Exécution : Déb. Exéc */}
+                <th className="px-1.5 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[106px] min-w-[106px] max-w-[106px]">
+                  {isEN ? 'ACT. START' : 'DÉB. EXÉC'}
                 </th>
-                {/* 2.5. LIBELLÉ DU RISQUE */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-48 min-w-[180px] max-w-[180px]">
-                  {isEN ? 'RISK DESCRIPTION' : 'LIBELLÉ DU RISQUE'}
+                {/* Timeline / Exécution : Fin Exéc */}
+                <th className="px-1.5 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[106px] min-w-[106px] max-w-[106px]">
+                  {isEN ? 'ACT. END' : 'FIN EXÉC'}
                 </th>
-                {/* 3. RESPONSABLES / RACI */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-36">
+                {/* Timeline / Exécution : Réel */}
+                <th className="px-1.5 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[62px] min-w-[62px] max-w-[62px]">
+                  {isEN ? 'ACTUAL' : 'RÉEL'}
+                </th>
+                {/* Timeline / Exécution : STATUT (Entre RÉEL et ÉCART DÉBUT : Auto À faire / En cours / Terminé + Bloqué manuel) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[108px] min-w-[108px] max-w-[108px] bg-orange-900/60">
+                  <div>{isEN ? 'STATUS' : 'STATUT'}</div>
+                  <div className="text-[7.5px] text-amber-200 font-bold mt-0.5">
+                    {isEN ? '🤖 Auto / ✋ Blocked' : '🤖 Auto / ✋ Bloqué'}
+                  </div>
+                </th>
+                {/* Timeline / Exécution : Écart début */}
+                <th className="px-1.5 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[96px] min-w-[96px] max-w-[96px]">
+                  {isEN ? 'START VAR.' : 'ÉCART DÉBUT'}
+                </th>
+                {/* Timeline / Exécution : Écart fin */}
+                <th className="px-1.5 py-2.5 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[96px] min-w-[96px] max-w-[96px]">
+                  {isEN ? 'END VAR.' : 'ÉCART FIN'}
+                </th>
+                {/* Décaissement : Date de décaissement */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[112px] min-w-[112px] max-w-[112px]">
+                  <div>{isEN ? 'DISBURSEMENT DATE' : 'DATE DE DÉCAISSEMENT'}</div>
+                </th>
+                {/* Décaissement */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[115px] min-w-[115px] max-w-[115px]">
+                  <div>DÉCAISSEMENT ({currency})</div>
+                </th>
+                {/* BUDGET / VALEUR PLANIFIÉE (Déplacé avant VALEUR ACQUISE) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[122px] min-w-[122px] max-w-[122px] bg-orange-900/60">
+                  <div className="font-black">BUDGET ({currency})</div>
+                  <div className="text-[8px] text-amber-200 font-extrabold mt-0.5">
+                    {isEN ? 'PLANNED VALUE (PV)' : 'VALEUR PLANIFIÉE'}
+                  </div>
+                </th>
+                {/* EVM : Valeur Acquise */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[118px] min-w-[118px] max-w-[118px]">
+                  <div>{isEN ? 'EARNED VALUE' : 'VALEUR ACQUISE'} ({currency})</div>
+                </th>
+                {/* EVM : % Valeur Acquise (par rapport au Budget) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[105px] min-w-[105px] max-w-[105px]">
+                  <div>{isEN ? '% EARNED VALUE' : '% VALEUR ACQUISE'}</div>
+                </th>
+                {/* EVM : Coût Réel */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[115px] min-w-[115px] max-w-[115px]">
+                  <div>{isEN ? 'ACTUAL COST' : 'COÛT RÉEL'} ({currency})</div>
+                </th>
+                {/* RESPONSABLES / RACI (Colonne opérationnelle de la tâche) */}
+                <th className="px-2 py-2.5 border-b-2 border-orange-200 border-r-2 border-orange-300 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[135px] min-w-[135px] max-w-[135px]">
                   {isEN ? 'LEAD / RACI' : 'RESPONSABLES / RACI'}
                 </th>
 
-                {/* Groupe IDENTIFICATION */}
-                <th colSpan={2} className="px-2 py-1.5 border-b border-orange-700 border-r border-orange-700 text-center bg-orange-800 text-[10px] uppercase text-orange-100 font-bold">
-                  {isEN ? 'IDENTIFICATION' : 'IDENTIFICATION'}
+                {/* =========================================================
+                    LES 19 COLONNES DU SUIVI DU RISQUE (ORDRE STRICT 1 → 19)
+                   ========================================================= */}
+                {/* 1. [DATE D'ID.] (🤖 Automatique / Calculé) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[102px] min-w-[102px] max-w-[102px] bg-orange-800/90">
+                  <div>{isEN ? 'ID DATE' : "DATE D'ID."}</div>
+                  <div className="text-[8px] text-amber-200 font-bold mt-0.5">🤖 Auto</div>
                 </th>
 
-                {/* 6. CATÉGORIE */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-32">
-                  {isEN ? 'CATEGORY' : 'CATÉGORIE'}
-                </th>
-                {/* 7. EVALUATION PESTEL */}
-                <th rowSpan={2} className="px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-28">
-                  {isEN ? 'PESTEL RATING' : 'EVALUATION PESTEL'}
-                </th>
-                {/* 8. PROBABILITÉ */}
-                <th rowSpan={2} className="px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-28">
-                  {isEN ? 'PROBABILITY' : 'PROBABILITÉ'}
-                </th>
-                {/* 9. GRAVITÉ / IMPACT */}
-                <th rowSpan={2} className="px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-28">
-                  {isEN ? 'SEVERITY / IMPACT' : 'GRAVITÉ / IMPACT'}
-                </th>
-                {/* 10. CRITICITÉ */}
-                <th rowSpan={2} className="px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-28">
-                  {isEN ? 'CRITICALITY' : 'CRITICITÉ'}
-                </th>
-                {/* 11. CONSÉQUENCE SI AVÉRÉ */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-36">
-                  {isEN ? 'CONSEQUENCE IF REALIZED' : 'CONSÉQUENCE SI AVÉRÉ'}
-                </th>
-                {/* 12. FAIBLESSE */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-32 min-w-[128px] max-w-[128px]">
-                  {isEN ? 'WEAKNESS' : 'FAIBLESSE'}
-                </th>
-                {/* 13. TENDANCE */}
-                <th rowSpan={2} className="px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-24">
-                  {isEN ? 'TREND' : 'TENDANCE'}
-                </th>
-                {/* 14. ACTION PRÉVENTIVE */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-48 min-w-[192px] max-w-[192px]">
-                  {isEN ? 'PREVENTIVE ACTION' : 'ACTION PRÉVENTIVE'}
-                </th>
-                {/* 15. ACTION CORRECTIVE */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-48 min-w-[192px] max-w-[192px]">
-                  {isEN ? 'CORRECTIVE ACTION' : 'ACTION CORRECTIVE'}
-                </th>
-                {/* 16. STATUT */}
-                <th rowSpan={2} className="px-2 py-3 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] uppercase w-28">
-                  {isEN ? 'STATUS' : 'STATUT'}
+                {/* 2. [DÉCLARÉ PAR] (✍️ Saisie manuelle Personne / Entité ou ⚡ Auto) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[140px] min-w-[140px] max-w-[140px] bg-orange-800/90">
+                  <div>{isEN ? 'DECLARED BY' : 'DÉCLARÉ PAR'}</div>
+                  <div className="text-[8px] text-amber-200 font-bold mt-0.5">
+                    {isEN ? '✍️ Manual / ⚡ Auto' : '✍️ Saisie / ⚡ Auto'}
+                  </div>
                 </th>
 
-                {/* Groupe RÉSOLUTION */}
-                <th colSpan={2} className="px-2 py-1.5 border-b border-orange-700 border-r border-orange-700 text-center bg-amber-800 text-[10px] uppercase text-amber-100 font-bold">
-                  {isEN ? 'RESOLUTION' : 'RÉSOLUTION'}
+                {/* 3. [LIBELLÉ DU RISQUE] (✍️ Saisie manuelle) */}
+                <th className="px-2 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[165px] min-w-[165px] max-w-[165px]">
+                  <div>{isEN ? 'RISK DESCRIPTION' : 'LIBELLÉ DU RISQUE'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Saisie</div>
                 </th>
 
-                {/* 19. COMMENTAIRE */}
-                <th rowSpan={2} className="px-3 py-3 border-b-2 border-orange-200 text-center text-[10px] uppercase w-48 min-w-[192px] max-w-[192px]">
-                  {isEN ? 'COMMENT' : 'COMMENTAIRE'}
+                {/* 4. [CATÉGORIE] (✍️ Choix déroulant) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[135px] min-w-[135px] max-w-[135px]">
+                  <div>{isEN ? 'CATEGORY' : 'CATÉGORIE'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Choix</div>
                 </th>
-              </tr>
-              <tr className="bg-orange-800 text-[9px] text-orange-100">
-                <th className="px-2 py-1.5 border-b-2 border-orange-200 border-r border-orange-700 text-center w-28">{isEN ? 'ID DATE' : "DATE D'ID."}</th>
-                <th className="px-2 py-1.5 border-b-2 border-orange-200 border-r border-orange-700 text-center w-32 min-w-[128px] max-w-[128px]">{isEN ? 'DECLARED BY' : 'DÉCLARÉ PAR'}</th>
 
-                <th className="px-2 py-1.5 border-b-2 border-orange-200 border-r border-orange-700 text-center w-28">{isEN ? 'RESOL. DATE' : 'DATE DE RÉSOL.'}</th>
-                <th className="px-2 py-1.5 border-b-2 border-orange-200 border-r border-orange-700 text-center w-48 min-w-[192px] max-w-[192px]">{isEN ? 'FINAL RESOLUTION' : 'RÉSOLUTION FINALE'}</th>
+                {/* 5. [ÉVALUATION PESTEL] (✍️ Choix déroulant) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[110px] min-w-[110px] max-w-[110px]">
+                  <div>{isEN ? 'PESTEL RATING' : 'ÉVALUATION PESTEL'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Choix</div>
+                </th>
+
+                {/* 6. [FAIBLESSE] (✍️ Choix déroulant) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[130px] min-w-[130px] max-w-[130px]">
+                  <div>{isEN ? 'WEAKNESS' : 'FAIBLESSE'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Choix</div>
+                </th>
+
+                {/* 7. [CONSÉQUENCE SI AVÉRÉ] (⚡ Pré-rempli modifiable) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[125px] min-w-[125px] max-w-[125px] bg-amber-900/40">
+                  <div>{isEN ? 'CONSEQUENCE IF REALIZED' : 'CONSÉQUENCE SI AVÉRÉ'}</div>
+                  <div className="text-[8px] text-amber-200 font-bold mt-0.5">⚡ Pré-rempli</div>
+                </th>
+
+                {/* 8. [PROBABILITÉ] (✍️ Choix déroulant — épaisseur légèrement réduite) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-nowrap w-[98px] min-w-[98px] max-w-[98px]">
+                  <div>{isEN ? 'PROBABILITY' : 'PROBABILITÉ'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Choix</div>
+                </th>
+
+                {/* 9. [GRAVITÉ / IMPACT] (✍️ Choix déroulant — épaisseur légèrement réduite) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-nowrap w-[114px] min-w-[114px] max-w-[114px]">
+                  <div>{isEN ? 'SEVERITY / IMPACT' : 'GRAVITÉ / IMPACT'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Choix</div>
+                </th>
+
+                {/* 10. [CRITICITÉ] (🤖 Automatique / Calculé) */}
+                <th className="px-3 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-nowrap w-[132px] min-w-[132px] bg-orange-800/90">
+                  <div>{isEN ? 'CRITICALITY' : 'CRITICITÉ'}</div>
+                  <div className="text-[8px] text-amber-200 font-bold mt-0.5">🤖 Auto</div>
+                </th>
+
+                {/* 11. [GESTIONNAIRE DU RISQUE] (⚡ Pré-rempli modifiable) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words w-[145px] min-w-[145px] max-w-[145px] bg-amber-900/40 leading-tight">
+                  <div>{isEN ? 'RISK MANAGER' : 'GESTIONNAIRE DU RISQUE'}</div>
+                  <div className="text-[8px] text-amber-200 font-bold mt-0.5">⚡ Pré-rempli</div>
+                </th>
+
+                {/* 12. [DÉCIDEUR / PROPRIÉTAIRE] (✍️ Saisie manuelle / Choix déroulant) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words w-[148px] min-w-[148px] max-w-[148px] leading-tight">
+                  <div>{isEN ? 'DECISION MAKER / OWNER' : 'DÉCIDEUR / PROPRIÉTAIRE'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Saisie / Choix</div>
+                </th>
+
+                {/* 13. [ACTION PRÉVENTIVE] (✍️ Saisie manuelle) */}
+                <th className="px-2 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[165px] min-w-[165px] max-w-[165px]">
+                  <div>{isEN ? 'PREVENTIVE ACTION' : 'ACTION PRÉVENTIVE'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Saisie</div>
+                </th>
+
+                {/* 14. [ACTION CORRECTIVE] (✍️ Saisie manuelle) */}
+                <th className="px-2 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[165px] min-w-[165px] max-w-[165px]">
+                  <div>{isEN ? 'CORRECTIVE ACTION' : 'ACTION CORRECTIVE'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Saisie</div>
+                </th>
+
+                {/* 15. [TENDANCE] (⚡ Pré-rempli modifiable) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[100px] min-w-[100px] max-w-[100px] bg-amber-900/40">
+                  <div>{isEN ? 'TREND' : 'TENDANCE'}</div>
+                  <div className="text-[8px] text-amber-200 font-bold mt-0.5">⚡ Pré-rempli</div>
+                </th>
+
+                {/* 16. [STATUT] (⚡ Pré-rempli modifiable) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[118px] min-w-[118px] max-w-[118px] bg-amber-900/40">
+                  <div>{isEN ? 'STATUS' : 'STATUT'}</div>
+                  <div className="text-[8px] text-amber-200 font-bold mt-0.5">⚡ Pré-rempli</div>
+                </th>
+
+                {/* 17. [DATE DE RÉSOL.] (🤖 Automatique / Calculé) */}
+                <th className="px-1.5 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[105px] min-w-[105px] max-w-[105px] bg-orange-800/90">
+                  <div>{isEN ? 'RESOL. DATE' : 'DATE DE RÉSOL.'}</div>
+                  <div className="text-[8px] text-amber-200 font-bold mt-0.5">🤖 Auto</div>
+                </th>
+
+                {/* 18. [RÉSOLUTION FINALE] (✍️ Saisie manuelle) */}
+                <th className="px-2 py-2 border-b-2 border-orange-200 border-r border-orange-700 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[165px] min-w-[165px] max-w-[165px]">
+                  <div>{isEN ? 'FINAL RESOLUTION' : 'RÉSOLUTION FINALE'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Saisie</div>
+                </th>
+
+                {/* 19. [COMMENTAIRE] (✍️ Saisie manuelle) */}
+                <th className="px-2 py-2 border-b-2 border-orange-200 text-center text-[10px] font-black uppercase whitespace-normal break-words leading-tight w-[165px] min-w-[165px] max-w-[165px]">
+                  <div>{isEN ? 'COMMENT' : 'COMMENTAIRE'}</div>
+                  <div className="text-[8px] text-orange-100 font-medium mt-0.5">✍️ Saisie</div>
+                </th>
               </tr>
             </thead>
 
@@ -2629,8 +2906,12 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                   .filter(item => {
                     const tk = item.task;
                     const matchPhase = tk.phase === phaseName;
+                    const normTaskR = normalizeRaciFieldList(
+                      [tk.assignee, tk.raciR].filter(Boolean).join(', ')
+                    );
                     const matchAssignee =
                       filterAssignee === 'ALL' ||
+                      normTaskR.includes(filterAssignee) ||
                       (tk.assignee || '').includes(filterAssignee);
                     const matchStatus =
                       filterStatus === 'ALL' || item.effectiveStatus === filterStatus;
@@ -2646,16 +2927,22 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                   });
 
                 // Phase sub-totals by status
-                const treatedCount = phaseTasks.filter(item => item.effectiveStatus === 'Terminé' || item.task.riskStatus === 'traité').length;
-                const inProgressCount = phaseTasks.filter(item => item.effectiveStatus === 'En cours' || item.task.riskStatus === 'en traitement').length;
-                const blockedCount = phaseTasks.filter(item => item.effectiveStatus === 'Bloqué' || item.task.riskStatus === 'bloqué').length;
+                const treatedCount = phaseTasks.filter(
+                  item => item.effectiveStatus === 'Terminé' || item.task.riskStatus === 'traité'
+                ).length;
+                const inProgressCount = phaseTasks.filter(
+                  item => item.effectiveStatus === 'En cours' || item.task.riskStatus === 'en traitement'
+                ).length;
+                const blockedCount = phaseTasks.filter(
+                  item => item.effectiveStatus === 'Bloqué' || item.task.riskStatus === 'bloqué'
+                ).length;
                 const todoCount = phaseTasks.length - treatedCount - inProgressCount - blockedCount;
 
                 return (
                   <React.Fragment key={collapseKey}>
                     {/* Collapsible Phase Header Row */}
                     <tr className="bg-orange-100 dark:bg-slate-800 border-y border-orange-300 dark:border-orange-800">
-                      <td colSpan={27} className="p-0">
+                      <td colSpan={39} className="p-0">
                         <div className="px-3 py-1.5 flex items-center justify-between sticky left-2 w-max gap-6">
                           <button
                             type="button"
@@ -2699,7 +2986,7 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                     {!isCollapsed && (
                       phaseTasks.length === 0 ? (
                         <tr>
-                          <td colSpan={27} className="px-6 py-3 text-slate-400 italic text-[11px]">
+                          <td colSpan={39} className="px-6 py-3 text-slate-400 italic text-[11px]">
                             {isEN ? `No item recorded in phase "${getTranslatedPhase(phaseName, language)}".` : `Aucun élément enregistré dans la phase « ${phaseName} ».`}
                           </td>
                         </tr>
@@ -2708,35 +2995,119 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                           const t = item.task;
                           const isJalon = (t.taskOrMilestone || t.type) === 'jalon';
                           const taskCode = item.code;
-                          const rStat = t.riskStatus || (item.effectiveStatus === 'Terminé' ? 'traité' : item.effectiveStatus === 'En cours' ? 'en traitement' : item.effectiveStatus === 'Bloqué' ? 'bloqué' : 'nouveau');
-                          const rawFaiblesse = (t.faiblesse || 'ressource humaine').toLowerCase().trim();
-                          const currentFaiblesse = RISK_DROPDOWNS.faiblesse.includes(rawFaiblesse)
-                            ? rawFaiblesse
-                            : rawFaiblesse.includes('materiel') || rawFaiblesse.includes('matériel')
-                            ? 'ressource materielle'
-                            : rawFaiblesse.includes('financ')
-                            ? 'ressource financiere'
-                            : 'ressource humaine';
+                          const metrics = computeTaskMetrics(t, todayISO);
+                          const displayedStartExec = metrics.effectiveActualStartDate;
+                          const displayedEndExec = metrics.effectiveActualEndDate;
 
+                          const taskBudgetFCFA = t.budget || 0;
                           const displayedBudget = Math.round(
-                            convertFromFCFA(t.budget || 0, currency)
+                            convertFromFCFA(taskBudgetFCFA, currency)
                           );
 
                           const displayedDisbursement = Math.round(
                             convertFromFCFA(t.montantDecaissement || 0, currency)
                           );
 
-                          // Logique Management des Risques ISO 31000 :
-                          // Évaluation PESTEL notée sur 5 (1/5 à 5/5), remplissage automatique de Probabilité & Gravité,
-                          // et calcul automatique de la Criticité en fonction de Probabilité × Gravité / Impact
+                          // EVM: Valeur Acquise (EV)
+                          const rawEV = t.valeurAcquise !== undefined
+                            ? t.valeurAcquise
+                            : item.effectiveStatus === 'Terminé'
+                            ? taskBudgetFCFA
+                            : item.effectiveStatus === 'En cours'
+                            ? Math.round(taskBudgetFCFA * 0.5)
+                            : item.effectiveStatus === 'Bloqué'
+                            ? Math.round(taskBudgetFCFA * 0.2)
+                            : 0;
+                          const displayedEV = Math.round(convertFromFCFA(rawEV, currency));
+
+                          // EVM: Coût Réel (AC)
+                          const rawCoutReel = t.coutReel !== undefined
+                            ? t.coutReel
+                            : (t.montantDecaissement !== undefined && t.montantDecaissement > 0)
+                            ? t.montantDecaissement
+                            : item.effectiveStatus === 'Terminé'
+                            ? taskBudgetFCFA
+                            : item.effectiveStatus === 'En cours'
+                            ? Math.round(taskBudgetFCFA * 0.5)
+                            : 0;
+                          const displayedCoutReel = Math.round(convertFromFCFA(rawCoutReel, currency));
+
+                          // EVM: % Valeur Acquise par rapport au Budget (Valeur Planifiée)
+                          const pctValeurAcquise =
+                            taskBudgetFCFA > 0
+                              ? Math.round((rawEV / taskBudgetFCFA) * 100)
+                              : item.effectiveStatus === 'Terminé'
+                              ? 100
+                              : 0;
+
+                          // =================================================================
+                          // AUTOMATISATION & SAISIE DES COLONNES DU SUIVI DES RISQUES
+                          // =================================================================
+                          // Col 16 [STATUT] (⚡ Pré-rempli : À TRAITER / EN TRAITEMENT ; bascule auto sur TRAITÉ si tâche Terminée)
+                          const rStat = deriveAutoRiskStatus(t, item.effectiveStatus);
+
+                          // Col 1 [DATE D'ID.] (🤖 Automatique : date du jour dès saisie dans LIBELLÉ DU RISQUE, ou DÉB. EXÉC par défaut)
+                          const autoDateId = t.dateIdentification || displayedStartExec || t.startDate || '';
+
+                          // Col 2 [DÉCLARÉ PAR] (✍️ Saisie manuelle de personne / entité, ou pré-rempli auto par défaut)
+                          const isSystemTriggered =
+                            metrics.ecartFinDays > 0 ||
+                            metrics.ecartDebutDays > 0 ||
+                            (rawCoutReel > taskBudgetFCFA && taskBudgetFCFA > 0);
+                          const hasManualRiskText = Boolean(t.libelleRisque && t.libelleRisque.trim() !== '');
+                          const defaultDeclarePar = hasManualRiskText
+                            ? connectedUserName || (isEN ? 'System (Auto)' : 'Système (Auto)')
+                            : isSystemTriggered
+                            ? isEN
+                              ? 'System (Auto)'
+                              : 'Système (Auto)'
+                            : connectedUserName || (isEN ? 'System (Auto)' : 'Système (Auto)');
+                          const currentDeclarePar =
+                            t.declarePar !== undefined ? t.declarePar : defaultDeclarePar;
+
+                          // Col 6 [FAIBLESSE]
+                          const currentFaiblesse = normalizeFaiblesseValue(t.faiblesse);
+
+                          // Col 7 [CONSÉQUENCE SI AVÉRÉ] (⚡ Pré-rempli : COÛT si Coût Réel > Budget, DÉLAI si Écart Fin > 0, sinon QUALITÉ)
+                          const currentConsequence = deriveAutoConsequence(
+                            t,
+                            rawCoutReel,
+                            taskBudgetFCFA,
+                            metrics.ecartFinDays
+                          );
+
+                          // Col 5, 8, 9, 10, 15 : Évaluation PESTEL, Probabilité, Gravité, Criticité (🤖 Auto) et Tendance (⚡ Pré-rempli)
                           const currentPestelScore = parsePestelScore(t.evaluationPestel);
                           const currentPestelValue = `${currentPestelScore}/5`;
-                          const autoRisk = deriveAutoRiskParameters(t, currentPestelScore, item.effectiveStatus);
+                          const autoRisk = deriveAutoRiskParameters(
+                            t,
+                            currentPestelScore,
+                            item.effectiveStatus,
+                            metrics.ecartFinDays
+                          );
                           const currentProb = autoRisk.probabilite;
                           const currentGrav = autoRisk.gravite;
                           const computedCrit = computeCriticiteFromProbAndGrav(currentProb, currentGrav);
                           const probNum = getProbNumericLevel(currentProb);
                           const gravNum = getGravNumericLevel(currentGrav);
+
+                          const probBadgeClass =
+                            probNum >= 4
+                              ? 'bg-red-700 text-white border-red-800'
+                              : probNum === 3
+                              ? 'bg-rose-500 text-white border-rose-600'
+                              : probNum === 2
+                              ? 'bg-amber-400 text-slate-950 border-amber-500'
+                              : 'bg-emerald-500 text-white border-emerald-600';
+
+                          const gravBadgeClass =
+                            gravNum >= 4
+                              ? 'bg-red-700 text-white border-red-800'
+                              : gravNum === 3
+                              ? 'bg-rose-500 text-white border-rose-600'
+                              : gravNum === 2
+                              ? 'bg-amber-400 text-slate-950 border-amber-500'
+                              : 'bg-emerald-500 text-white border-emerald-600';
 
                           const critBadgeClass =
                             computedCrit === 'tres critique'
@@ -2747,6 +3118,32 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                               ? 'bg-amber-400 text-slate-950 border-amber-500'
                               : 'bg-emerald-500 text-white border-emerald-600';
 
+                          // Poste RACI (R) de la tâche
+                          const currentRaciRPositions =
+                            normalizeRaciFieldList(
+                              [t.assignee, t.raciR, t.responsabilite].filter(Boolean).join(', ')
+                            ) || '—';
+
+                          // Col 11 [GESTIONNAIRE DU RISQUE] (⚡ Pré-rempli automatiquement avec le 1er poste de RESPONSABLES / RACI, modifiable)
+                          const currentRiskManager = getDefaultRiskManager(t);
+
+                          // Col 12 [DÉCIDEUR / PROPRIÉTAIRE] (⚡ Pré-rempli automatiquement avec le poste d'Autorité RACI-A, modifiable)
+                          const currentRiskOwner = getDefaultRiskOwner(t);
+
+                          // Col 17 [DATE DE RÉSOL.] (🤖 Automatique : date du jour au passage à TRAITÉ ou FIN EXÉC, vide sinon)
+                          const autoDateResol =
+                            rStat === 'traité'
+                              ? t.dateResolution || displayedEndExec || t.actualEndDate || todayISO
+                              : '';
+
+                          const isOperationalBlocked = item.effectiveStatus === 'Bloqué';
+                          const autoUnblockedStatus: Task['status'] =
+                            displayedEndExec && displayedEndExec <= todayISO
+                              ? 'Terminé'
+                              : displayedStartExec && displayedStartExec <= todayISO
+                              ? 'En cours'
+                              : 'À faire';
+
                           return (
                             <tr key={t.id} className="hover:bg-orange-50/40 dark:hover:bg-slate-800/50 transition-colors">
                               {/* 1. TYPE (Sticky Left 0) */}
@@ -2755,7 +3152,7 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                 className="p-1 border-r border-slate-200 dark:border-slate-800 sticky left-0 z-20 bg-white dark:bg-slate-900 w-[48px] min-w-[48px] max-w-[48px] align-top text-center"
                               >
                                 <span
-                                  className={`w-full text-center font-mono text-[9px] font-black px-1 py-1 rounded leading-tight block select-none ${
+                                  className={`w-full text-center font-mono text-[10px] font-black px-1 py-1 rounded leading-tight block select-none whitespace-normal break-words ${
                                     isJalon
                                       ? 'bg-amber-400 text-slate-950'
                                       : 'bg-orange-600 text-white'
@@ -2768,50 +3165,246 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                               {/* 2. ACTIVITÉ / TÂCHE (Sticky Left 48px) */}
                               <td
                                 style={{ position: 'sticky', left: 48 }}
-                                className="p-1 border-r-2 border-orange-500 dark:border-orange-400 border-b border-slate-200 dark:border-slate-800 font-extrabold text-slate-900 dark:text-white text-[10px] leading-tight sticky left-[48px] z-20 bg-white dark:bg-slate-900 w-[116px] min-w-[116px] max-w-[116px] sm:w-[136px] sm:min-w-[136px] sm:max-w-[136px] align-top shadow-[3px_0_6px_rgba(234,88,12,0.18)]"
+                                className="p-1 border-r-2 border-orange-500 dark:border-orange-400 border-b border-slate-200 dark:border-slate-800 font-extrabold text-slate-900 dark:text-white text-[10px] leading-tight sticky left-[48px] z-20 bg-white dark:bg-slate-900 w-[135px] min-w-[135px] max-w-[135px] sm:w-[155px] sm:min-w-[155px] sm:max-w-[155px] align-top shadow-[3px_0_6px_rgba(234,88,12,0.18)]"
                               >
                                 <div className="w-full p-1 font-extrabold text-[10px] leading-snug text-slate-900 dark:text-white whitespace-normal break-words">
                                   {t.name || t.activity || '—'}
                                 </div>
                               </td>
 
-                              {/* NEW 1: Livrable (Read-only) */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-32 min-w-[128px] align-top">
+                              {/* Livrable (Read-only) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[125px] min-w-[125px] max-w-[125px] align-top">
                                 <div className="w-full p-1 text-[10px] font-semibold text-slate-700 dark:text-slate-300 whitespace-normal break-words leading-snug select-none">
                                   {t.livrable || '—'}
                                 </div>
                               </td>
 
-                              {/* NEW 2: Bailleur / Financement (Read-only) */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-36 min-w-[140px] align-top">
+                              {/* Bailleur / Financement (Read-only) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[130px] min-w-[130px] max-w-[130px] align-top">
                                 <div className="w-full p-1 text-[10px] font-semibold text-slate-700 dark:text-slate-300 whitespace-normal break-words leading-snug select-none">
                                   {t.bailleur || '—'}
                                 </div>
                               </td>
 
-                              {/* NEW 3: Budget (Read-only) */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-28 min-w-[110px] align-top">
-                                <div className="w-full p-1 text-right font-mono text-[10px] font-bold text-slate-900 dark:text-white select-none">
-                                  {displayedBudget.toLocaleString()}
-                                </div>
-                              </td>
-
-                              {/* NEW 6: Déb. Prév (Read-only) */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-28 min-w-[110px] align-top">
-                                <div className="p-1 text-center font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300 select-none">
+                              {/* Timeline 1: Déb. Prév (Read-only) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[88px] min-w-[88px] max-w-[88px] align-top">
+                                <div className="p-1 text-center font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300 whitespace-normal break-words select-none">
                                   {t.startDate || '—'}
                                 </div>
                               </td>
 
-                              {/* NEW 7: Fin Prév (Read-only) */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-28 min-w-[110px] align-top">
-                                <div className="p-1 text-center font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300 select-none">
+                              {/* Timeline 2: Fin Prév (Read-only) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[88px] min-w-[88px] max-w-[88px] align-top">
+                                <div className="p-1 text-center font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300 whitespace-normal break-words select-none">
                                   {t.endDate || '—'}
                                 </div>
                               </td>
 
-                              {/* NEW 8: Date de décaissement */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-28 min-w-[112px] align-top">
+                              {/* Timeline 3: Durée (Read-only) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[62px] min-w-[62px] max-w-[62px] align-top">
+                                <div className="p-1 text-center font-mono font-bold text-[10px] text-[#0c4a6e] dark:text-[#90D5FF] whitespace-normal break-words select-none">
+                                  {metrics.plannedDurationLabel}
+                                </div>
+                              </td>
+
+                              {/* Timeline 4: Déb. Exéc */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[106px] min-w-[106px] max-w-[106px] align-top">
+                                <input
+                                  type="date"
+                                  max={todayISO}
+                                  value={displayedStartExec}
+                                  onChange={e => {
+                                    const rawVal = e.target.value;
+                                    if (!rawVal) {
+                                      onUpdateTask &&
+                                        onUpdateTask(item.projId, t.id, {
+                                          actualStartDate: '',
+                                          actualEndDate: '',
+                                          status: t.manualBlocked ? 'Bloqué' : 'À faire'
+                                        });
+                                      return;
+                                    }
+                                    const clampedStart = rawVal > todayISO ? todayISO : rawVal;
+                                    const validEnd =
+                                      displayedEndExec && displayedEndExec <= todayISO && displayedEndExec >= clampedStart
+                                        ? displayedEndExec
+                                        : '';
+                                    onUpdateTask &&
+                                      onUpdateTask(item.projId, t.id, {
+                                        actualStartDate: clampedStart,
+                                        actualEndDate: validEnd,
+                                        status: validEnd ? 'Terminé' : t.manualBlocked ? 'Bloqué' : 'En cours',
+                                        ...(validEnd ? { manualBlocked: false, riskStatus: 'traité', dateResolution: validEnd } : {})
+                                      });
+                                  }}
+                                  className="w-full bg-transparent p-0.5 text-center font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none"
+                                />
+                              </td>
+
+                              {/* Timeline 5: Fin Exéc */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[106px] min-w-[106px] max-w-[106px] align-top">
+                                {item.effectiveStatus === 'Bloqué' || item.effectiveStatus === 'À faire' || !displayedStartExec ? (
+                                  <div className="p-1 text-center font-mono text-[10px] font-bold text-slate-400 dark:text-slate-500 select-none">
+                                    —
+                                  </div>
+                                ) : (
+                                  <input
+                                    type="date"
+                                    min={displayedStartExec}
+                                    max={todayISO}
+                                    value={displayedEndExec}
+                                    onChange={e => {
+                                      const rawVal = e.target.value;
+                                      if (!rawVal) {
+                                        onUpdateTask &&
+                                          onUpdateTask(item.projId, t.id, {
+                                            actualEndDate: '',
+                                            dateResolution: '',
+                                            riskStatus: t.manualBlocked ? 'bloqué' : 'en traitement',
+                                            status: t.manualBlocked ? 'Bloqué' : 'En cours'
+                                          });
+                                        return;
+                                      }
+                                      const clampedEnd = rawVal > todayISO ? todayISO : rawVal;
+                                      const finalEnd = clampedEnd < displayedStartExec ? displayedStartExec : clampedEnd;
+                                      onUpdateTask &&
+                                        onUpdateTask(item.projId, t.id, {
+                                          actualStartDate: displayedStartExec,
+                                          actualEndDate: finalEnd,
+                                          dateResolution: finalEnd,
+                                          riskStatus: 'traité',
+                                          status: 'Terminé',
+                                          tendance: 'baisse',
+                                          manualBlocked: false
+                                        });
+                                    }}
+                                    className="w-full bg-transparent p-0.5 text-center font-mono text-[10px] font-semibold text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none"
+                                  />
+                                )}
+                              </td>
+
+                              {/* Timeline 6: Réel (Read-only) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[62px] min-w-[62px] max-w-[62px] align-top">
+                                <div className="p-1 text-center font-mono font-bold text-[10px] text-slate-800 dark:text-slate-200 whitespace-normal break-words select-none">
+                                  {metrics.realDurationLabel}
+                                </div>
+                              </td>
+
+                              {/* Timeline 6b: STATUT (Entre RÉEL et ÉCART DÉBUT — Automatique : À faire / En cours / Terminé, et Bloqué activable manuellement) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[108px] min-w-[108px] max-w-[108px] align-top text-center bg-orange-50/20 dark:bg-slate-800/20">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span
+                                    title={
+                                      isOperationalBlocked
+                                        ? isEN
+                                          ? 'Manually blocked task — click button below to resume automatic status'
+                                          : 'Tâche bloquée manuellement — cliquez ci-dessous pour revenir au statut automatique'
+                                        : isEN
+                                        ? 'Automatically calculated from execution dates'
+                                        : 'Calculé automatiquement selon les dates d’exécution (Déb. Exéc / Fin Exéc)'
+                                    }
+                                    className={`w-full px-1.5 py-0.5 rounded font-black text-[10px] uppercase tracking-tight whitespace-normal break-words leading-tight border select-none ${
+                                      item.effectiveStatus === 'Terminé'
+                                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                        : item.effectiveStatus === 'Bloqué'
+                                        ? 'bg-rose-600 text-white border-rose-700'
+                                        : item.effectiveStatus === 'En cours'
+                                        ? 'bg-sky-100 text-[#0c4a6e] border-sky-300 dark:bg-sky-950/60 dark:text-[#90D5FF] dark:border-sky-800'
+                                        : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                                    }`}
+                                  >
+                                    {item.effectiveStatus === 'Terminé'
+                                      ? isEN
+                                        ? 'Completed'
+                                        : 'Terminé'
+                                      : item.effectiveStatus === 'Bloqué'
+                                      ? isEN
+                                        ? 'Blocked'
+                                        : 'Bloqué'
+                                      : item.effectiveStatus === 'En cours'
+                                      ? isEN
+                                        ? 'In progress'
+                                        : 'En cours'
+                                      : isEN
+                                      ? 'To do'
+                                      : 'À faire'}
+                                  </span>
+
+                                  {item.effectiveStatus !== 'Terminé' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextBlocked = !isOperationalBlocked;
+                                        const nextStatus: Task['status'] = nextBlocked
+                                          ? 'Bloqué'
+                                          : autoUnblockedStatus;
+                                        const nextRiskStat = nextBlocked
+                                          ? 'bloqué'
+                                          : nextStatus === 'En cours'
+                                          ? 'en traitement'
+                                          : 'à traiter';
+                                        onUpdateTask &&
+                                          onUpdateTask(item.projId, t.id, {
+                                            manualBlocked: nextBlocked,
+                                            status: nextStatus,
+                                            riskStatus: nextRiskStat,
+                                            ...(nextBlocked ? { actualEndDate: '', dateResolution: '' } : {})
+                                          });
+                                      }}
+                                      className={`w-full px-1 py-0.5 rounded text-[9px] font-extrabold uppercase transition-colors cursor-pointer border whitespace-normal break-words leading-tight ${
+                                        isOperationalBlocked
+                                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                                          : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/60'
+                                      }`}
+                                    >
+                                      {isOperationalBlocked
+                                        ? isEN
+                                          ? '↺ Auto status'
+                                          : '↺ Statut Auto'
+                                        : isEN
+                                        ? '✋ Set Blocked'
+                                        : '✋ Bloquer'}
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Timeline 7: Écart début (Read-only) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[96px] min-w-[96px] max-w-[96px] align-top text-center">
+                                <div className="p-0.5 text-center select-none">
+                                  <span
+                                    className={`inline-block px-1 py-0.5 rounded font-mono text-[10px] font-bold whitespace-normal break-words leading-tight ${
+                                      metrics.ecartDebutDays > 0
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                        : metrics.ecartDebutDays < 0
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                        : 'text-slate-500 dark:text-slate-400'
+                                    }`}
+                                  >
+                                    {metrics.ecartDebutLabel}
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* Timeline 8: Écart fin (Read-only) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[96px] min-w-[96px] max-w-[96px] align-top text-center">
+                                <div className="p-0.5 text-center select-none">
+                                  <span
+                                    className={`inline-block px-1 py-0.5 rounded font-mono text-[10px] font-bold whitespace-normal break-words leading-tight ${
+                                      metrics.ecartFinDays > 0
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                        : metrics.ecartFinDays < 0
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                        : 'text-slate-500 dark:text-slate-400'
+                                    }`}
+                                  >
+                                    {metrics.ecartFinLabel}
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* Date de décaissement */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[112px] min-w-[112px] max-w-[112px] align-top">
                                 <input
                                   type="date"
                                   value={t.dateDecaissement || ''}
@@ -2819,12 +3412,12 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                     onUpdateTask &&
                                     onUpdateTask(item.projId, t.id, { dateDecaissement: e.target.value })
                                   }
-                                  className="w-full bg-transparent p-1 text-center text-[10px] font-semibold text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none"
+                                  className="w-full bg-transparent p-0.5 text-center text-[10px] font-semibold text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none"
                                 />
                               </td>
 
-                              {/* NEW 9: Décaissement (réduit) */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-24 min-w-[96px] max-w-[96px] align-top">
+                              {/* Décaissement */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[115px] min-w-[115px] max-w-[115px] align-top">
                                 <input
                                   type="number"
                                   value={displayedDisbursement}
@@ -2838,51 +3431,186 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                 />
                               </td>
 
-                              {/* 2.5 LIBELLÉ DU RISQUE */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-48 min-w-[180px] max-w-[180px] align-top">
+                              {/* BUDGET / VALEUR PLANIFIÉE (Read-only, juste avant VALEUR ACQUISE) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[122px] min-w-[122px] max-w-[122px] align-top bg-orange-50/30 dark:bg-slate-800/30">
+                                <div
+                                  title={isEN ? 'Planned Value (PV) — Read-only' : 'Valeur Planifiée (Budget initial) — Lecture seule'}
+                                  className="w-full p-1 text-right font-mono text-[10px] font-black text-slate-900 dark:text-white whitespace-normal break-words select-none"
+                                >
+                                  {displayedBudget.toLocaleString()}
+                                </div>
+                              </td>
+
+                              {/* EVM : Valeur Acquise */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[118px] min-w-[118px] max-w-[118px] align-top">
+                                <input
+                                  type="number"
+                                  value={displayedEV}
+                                  onChange={e => {
+                                    const nextEV = convertToFCFA(Number(e.target.value), currency);
+                                    const nextPct =
+                                      taskBudgetFCFA > 0
+                                        ? Math.round((nextEV / taskBudgetFCFA) * 100)
+                                        : 0;
+                                    onUpdateTask &&
+                                      onUpdateTask(item.projId, t.id, {
+                                        valeurAcquise: nextEV,
+                                        progresBudget: nextPct
+                                      });
+                                  }}
+                                  className="w-full bg-transparent p-1 text-right font-mono text-[10px] font-bold text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none"
+                                />
+                              </td>
+
+                              {/* EVM : % Valeur Acquise (Pourcentage de la Valeur Acquise par rapport au Budget) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[105px] min-w-[105px] max-w-[105px] align-top bg-orange-50/20 dark:bg-slate-800/20">
+                                <div
+                                  title={
+                                    isEN
+                                      ? 'Percentage of Earned Value relative to Planned Budget (EV / Budget)'
+                                      : 'Pourcentage de la Valeur Acquise par rapport au Budget (Valeur Acquise / Budget)'
+                                  }
+                                  className="flex items-center justify-center px-1 py-1"
+                                >
+                                  <span
+                                    className={`font-mono text-[10px] font-black px-1.5 py-0.5 rounded select-none ${
+                                      pctValeurAcquise >= 100
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                        : pctValeurAcquise >= 50
+                                        ? 'bg-sky-100 text-[#0c4a6e] dark:bg-sky-950/60 dark:text-[#90D5FF]'
+                                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                    }`}
+                                  >
+                                    {pctValeurAcquise}%
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* EVM : Coût Réel */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[115px] min-w-[115px] max-w-[115px] align-top">
+                                <input
+                                  type="number"
+                                  value={displayedCoutReel}
+                                  onChange={e => {
+                                    const nextCoutReelFCFA = convertToFCFA(Number(e.target.value), currency);
+                                    const nextCons: 'cout' | 'délai' | 'qualité' =
+                                      nextCoutReelFCFA > taskBudgetFCFA && taskBudgetFCFA > 0
+                                        ? 'cout'
+                                        : metrics.ecartFinDays > 0
+                                        ? 'délai'
+                                        : 'qualité';
+                                    onUpdateTask &&
+                                      onUpdateTask(item.projId, t.id, {
+                                        coutReel: nextCoutReelFCFA,
+                                        consequence: nextCons
+                                      });
+                                  }}
+                                  className="w-full bg-transparent p-1 text-right font-mono text-[10px] font-bold text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none"
+                                />
+                              </td>
+
+                              {/* RESPONSABLES / RACI (Lecture seule — affiche les postes de la RACI et sert de source auto pour GESTIONNAIRE DU RISQUE) */}
+                              <td className="p-1 border-r-2 border-orange-300 dark:border-orange-800 text-[10px] w-[135px] min-w-[135px] max-w-[135px] align-top">
+                                <div className="w-full p-1 text-[10px] font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-snug select-none">
+                                  {currentRaciRPositions}
+                                </div>
+                              </td>
+
+                              {/* =================================================================
+                                  LES 19 COLONNES DU SUIVI DES RISQUES (ORDRE STRICT 1 → 19)
+                                 ================================================================= */}
+
+                              {/* 1. [DATE D'ID.] (🤖 100 % Automatique : Date du jour dès saisie du risque, ou DÉB. EXÉC par défaut) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[102px] min-w-[102px] max-w-[102px] align-top bg-slate-50/60 dark:bg-slate-800/40">
+                                <div
+                                  title={
+                                    isEN
+                                      ? 'Auto-filled with today’s date upon risk entry, or Execution Start Date by default'
+                                      : "Calculé automatiquement : Date du jour dès la saisie du risque, ou Déb. Exéc par défaut"
+                                  }
+                                  className="w-full p-1 text-center font-mono text-[10px] font-bold text-slate-700 dark:text-slate-300 whitespace-normal break-words select-none"
+                                >
+                                  {autoDateId || '—'}
+                                </div>
+                              </td>
+
+                              {/* 2. [DÉCLARÉ PAR] (✍️ Saisie manuelle de la personne ou de l'entité qui déclare le risque — contenu intégral affiché) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[140px] min-w-[140px] max-w-[140px] align-top bg-amber-50/20 dark:bg-slate-800/30">
+                                <textarea
+                                  rows={3}
+                                  value={currentDeclarePar}
+                                  onChange={e =>
+                                    onUpdateTask &&
+                                    onUpdateTask(item.projId, t.id, {
+                                      declarePar: e.target.value
+                                    })
+                                  }
+                                  placeholder={
+                                    isEN
+                                      ? 'Person or entity declaring...'
+                                      : 'Personne ou entité déclarante...'
+                                  }
+                                  title={
+                                    isEN
+                                      ? 'Manually enter the person or entity declaring the risk'
+                                      : 'Renseignez manuellement la personne ou l’entité qui déclare le risque'
+                                  }
+                                  className={`w-full p-1 text-center text-[10px] font-extrabold rounded border outline-none resize-none leading-snug whitespace-normal break-words transition-colors ${
+                                    currentDeclarePar.includes('Auto')
+                                      ? 'text-amber-800 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/40 border-amber-200/70 dark:border-amber-800/60 focus:bg-white dark:focus:bg-slate-800 focus:border-orange-400'
+                                      : 'text-slate-800 dark:text-slate-200 bg-transparent border-transparent focus:bg-white dark:focus:bg-slate-800 focus:border-orange-400'
+                                  }`}
+                                />
+                              </td>
+
+                              {/* 3. [LIBELLÉ DU RISQUE] (✍️ Saisie manuelle — déclenche DATE D'ID., DÉCLARÉ PAR et STATUT) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[165px] min-w-[165px] max-w-[165px] align-top">
                                 <textarea
                                   rows={4}
                                   value={t.libelleRisque || ''}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { libelleRisque: e.target.value })}
+                                  onChange={e => {
+                                    const nextText = e.target.value;
+                                    const isNewlyTyped =
+                                      (!t.libelleRisque || t.libelleRisque.trim() === '') &&
+                                      nextText.trim() !== '';
+                                    onUpdateTask &&
+                                      onUpdateTask(item.projId, t.id, {
+                                        libelleRisque: nextText,
+                                        ...(isNewlyTyped || (!t.dateIdentification && nextText.trim() !== '')
+                                          ? { dateIdentification: todayISO }
+                                          : {}),
+                                        ...(nextText.trim() !== ''
+                                          ? {
+                                              declarePar:
+                                                t.declarePar !== undefined && t.declarePar.trim() !== ''
+                                                  ? t.declarePar
+                                                  : connectedUserName ||
+                                                    (isEN ? 'System (Auto)' : 'Système (Auto)'),
+                                              riskStatus:
+                                                item.effectiveStatus === 'Terminé'
+                                                  ? 'traité'
+                                                  : t.riskStatus || (item.effectiveStatus === 'En cours' ? 'en traitement' : 'à traiter')
+                                            }
+                                          : {})
+                                      });
+                                  }}
                                   placeholder={isEN ? 'Risk description...' : 'Libellé du risque...'}
                                   className="w-full bg-transparent p-1 text-[10px] font-medium text-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none resize-none leading-snug whitespace-normal break-words"
                                 />
                               </td>
 
-                              {/* 3. RESPONSABLES / RACI */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-36 min-w-[144px] max-w-[144px] align-top">
-                                <div className="w-full p-1 text-[10px] font-bold text-slate-800 dark:text-slate-200 whitespace-normal break-words leading-snug">
-                                  {t.assignee || '—'}
-                                </div>
-                              </td>
-
-                              {/* 4. DATE D'ID. */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] align-top">
-                                <input
-                                  type="date"
-                                  value={t.dateIdentification || t.startDate || ''}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { dateIdentification: e.target.value })}
-                                  className="w-full bg-transparent p-1 text-center text-[10px] text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none"
-                                />
-                              </td>
-
-                              {/* 5. DÉCLARÉ PAR */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-32 min-w-[128px] max-w-[128px] align-top">
-                                <textarea
-                                  rows={4}
-                                  value={t.declarePar || ''}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { declarePar: e.target.value })}
-                                  placeholder={isEN ? 'Declared by...' : 'Déclaré par...'}
-                                  className="w-full bg-transparent p-1 text-[10px] text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none resize-none leading-snug whitespace-normal break-words"
-                                />
-                              </td>
-
-                              {/* 6. CATÉGORIE */}
-                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
+                              {/* 4. [CATÉGORIE] (✍️ Choix déroulant avec affichage complet) */}
+                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 w-[135px] min-w-[135px] max-w-[135px] align-top">
                                 <select
                                   value={t.categorie || t.nature || 'technologie / technique'}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { categorie: e.target.value, nature: e.target.value })}
-                                  className="bg-transparent p-1 text-center text-[10px] capitalize rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer font-medium"
+                                  onChange={e =>
+                                    onUpdateTask &&
+                                    onUpdateTask(item.projId, t.id, {
+                                      categorie: e.target.value,
+                                      nature: e.target.value
+                                    })
+                                  }
+                                  className="w-full bg-transparent p-1 text-center text-[10px] capitalize rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer font-semibold whitespace-normal break-words leading-tight"
                                 >
                                   {RISK_DROPDOWNS.nature.map(n => (
                                     <option key={n} value={n}>{getTranslatedDropdownLabel(n, language)}</option>
@@ -2890,8 +3618,8 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                 </select>
                               </td>
 
-                              {/* 7. EVALUATION PESTEL (Choix 1 à 5 notés sur 5 -> remplit auto Probabilité, Gravité et Criticité) */}
-                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 text-[10px] align-top">
+                              {/* 5. [ÉVALUATION PESTEL] (✍️ Choix déroulant 1/5 à 5/5) */}
+                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 text-[10px] w-[110px] min-w-[110px] max-w-[110px] align-top">
                                 <select
                                   value={currentPestelValue}
                                   onChange={e => {
@@ -2906,7 +3634,8 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                     const autoNext = deriveAutoRiskParameters(
                                       taskWithoutManualOverride,
                                       nextScore,
-                                      item.effectiveStatus
+                                      item.effectiveStatus,
+                                      metrics.ecartFinDays
                                     );
                                     onUpdateTask &&
                                       onUpdateTask(item.projId, t.id, {
@@ -2925,94 +3654,15 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                 </select>
                               </td>
 
-                              {/* 8. PROBABILITÉ (Rempli automatiquement, met à jour la Criticité et la Tendance) */}
-                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
-                                <select
-                                  value={currentProb}
-                                  onChange={e => {
-                                    const nextProb = e.target.value;
-                                    const nextCrit = computeCriticiteFromProbAndGrav(nextProb, currentGrav);
-                                    const nextTend: 'stable' | 'hausse' | 'baisse' =
-                                      nextCrit === 'tres critique' || nextCrit === 'critique' || rStat === 'bloqué'
-                                        ? 'hausse'
-                                        : nextCrit === 'faible' || rStat === 'traité'
-                                        ? 'baisse'
-                                        : 'stable';
-                                    onUpdateTask &&
-                                      onUpdateTask(item.projId, t.id, {
-                                        probabilite: nextProb as any,
-                                        gravite: currentGrav as any,
-                                        criticite: nextCrit,
-                                        tendance: nextTend
-                                      });
-                                  }}
-                                  className="bg-transparent p-1 text-center text-[10px] font-semibold capitalize rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
-                                >
-                                  {RISK_DROPDOWNS.probabilite.map(p => (
-                                    <option key={p} value={p}>{getTranslatedDropdownLabel(p, language)}</option>
-                                  ))}
-                                </select>
-                              </td>
-
-                              {/* 9. GRAVITÉ / IMPACT (Rempli automatiquement, met à jour la Criticité et la Tendance) */}
-                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
-                                <select
-                                  value={currentGrav}
-                                  onChange={e => {
-                                    const nextGrav = e.target.value;
-                                    const nextCrit = computeCriticiteFromProbAndGrav(currentProb, nextGrav);
-                                    const nextTend: 'stable' | 'hausse' | 'baisse' =
-                                      nextCrit === 'tres critique' || nextCrit === 'critique' || rStat === 'bloqué'
-                                        ? 'hausse'
-                                        : nextCrit === 'faible' || rStat === 'traité'
-                                        ? 'baisse'
-                                        : 'stable';
-                                    onUpdateTask &&
-                                      onUpdateTask(item.projId, t.id, {
-                                        probabilite: currentProb as any,
-                                        gravite: nextGrav as any,
-                                        criticite: nextCrit,
-                                        tendance: nextTend
-                                      });
-                                  }}
-                                  className="bg-transparent p-1 text-center text-[10px] font-semibold capitalize rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
-                                >
-                                  {RISK_DROPDOWNS.gravite.map(g => (
-                                    <option key={g} value={g}>{getTranslatedDropdownLabel(g, language)}</option>
-                                  ))}
-                                </select>
-                              </td>
-
-                              {/* 10. CRITICITÉ (Calculée automatiquement en fonction de PROBABILITÉ × GRAVITÉ / IMPACT) */}
-                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
-                                <div
-                                  title={`${isEN ? 'Auto-calculated (Probability × Severity):' : 'Calcul automatique (Probabilité × Gravité) :'} ${probNum} × ${gravNum} = ${probNum * gravNum}/16`}
-                                  className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md border text-[9px] font-black uppercase tracking-wider select-none shadow-2xs ${critBadgeClass}`}
-                                >
-                                  <span>{getTranslatedDropdownLabel(computedCrit, language)}</span>
-                                  <span className="opacity-85 font-mono text-[8px]">({probNum * gravNum})</span>
-                                </div>
-                              </td>
-
-                              {/* 11. CONSÉQUENCE SI AVÉRÉ */}
-                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
-                                <select
-                                  value={t.consequence || 'qualité'}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { consequence: e.target.value as any })}
-                                  className="bg-transparent p-1 text-center text-[10px] font-bold uppercase rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
-                                >
-                                  {RISK_DROPDOWNS.consequence.map(c => (
-                                    <option key={c} value={c}>{getTranslatedDropdownLabel(c, language)}</option>
-                                  ))}
-                                </select>
-                              </td>
-
-                              {/* 12. FAIBLESSE */}
-                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 text-[10px] w-32 min-w-[128px] max-w-[128px] align-top">
+                              {/* 6. [FAIBLESSE] (✍️ Choix déroulant) */}
+                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 text-[10px] w-[130px] min-w-[130px] max-w-[130px] align-top">
                                 <select
                                   value={currentFaiblesse}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { faiblesse: e.target.value })}
-                                  className="w-full bg-transparent p-1 text-center text-[10px] font-semibold rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
+                                  onChange={e =>
+                                    onUpdateTask &&
+                                    onUpdateTask(item.projId, t.id, { faiblesse: e.target.value })
+                                  }
+                                  className="w-full bg-transparent p-1 text-center text-[10px] font-semibold rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer whitespace-normal break-words leading-tight"
                                 >
                                   {RISK_DROPDOWNS.faiblesse.map(fb => (
                                     <option key={fb} value={fb}>{getTranslatedDropdownLabel(fb, language)}</option>
@@ -3020,12 +3670,174 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                 </select>
                               </td>
 
-                              {/* 13. TENDANCE */}
-                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
+                              {/* 7. [CONSÉQUENCE SI AVÉRÉ] (⚡ Pré-rempli : COÛT si Coût Réel > Budget, DÉLAI si Écart Fin > 0, sinon QUALITÉ ; modifiable) */}
+                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 w-[125px] min-w-[125px] max-w-[125px] align-top bg-amber-50/20 dark:bg-slate-800/20">
+                                <select
+                                  value={currentConsequence}
+                                  onChange={e =>
+                                    onUpdateTask &&
+                                    onUpdateTask(item.projId, t.id, { consequence: e.target.value as any })
+                                  }
+                                  className="w-full bg-transparent p-1 text-center text-[10px] font-bold uppercase rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer whitespace-normal break-words leading-tight"
+                                >
+                                  {RISK_DROPDOWNS.consequence.map(c => (
+                                    <option key={c} value={c}>{getTranslatedDropdownLabel(c, language)}</option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* 8. [PROBABILITÉ] (✍️ Choix déroulant coloré comme CRITICITÉ — épaisseur légèrement réduite) */}
+                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 w-[98px] min-w-[98px] max-w-[98px] align-top">
+                                <select
+                                  value={currentProb}
+                                  onChange={e => {
+                                    const nextProb = e.target.value;
+                                    const nextCrit = computeCriticiteFromProbAndGrav(nextProb, currentGrav);
+                                    onUpdateTask &&
+                                      onUpdateTask(item.projId, t.id, {
+                                        probabilite: nextProb as any,
+                                        gravite: currentGrav as any,
+                                        criticite: nextCrit
+                                      });
+                                  }}
+                                  className={`w-full px-1 py-1 text-center text-[8.5px] font-black uppercase tracking-tight rounded-md border shadow-2xs focus:outline-none cursor-pointer truncate ${probBadgeClass}`}
+                                >
+                                  {RISK_DROPDOWNS.probabilite.map(p => (
+                                    <option
+                                      key={p}
+                                      value={p}
+                                      className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold"
+                                    >
+                                      {getTranslatedDropdownLabel(p, language)} ({getProbNumericLevel(p)})
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* 9. [GRAVITÉ / IMPACT] (✍️ Choix déroulant coloré comme CRITICITÉ — épaisseur légèrement réduite) */}
+                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 w-[114px] min-w-[114px] max-w-[114px] align-top">
+                                <select
+                                  value={currentGrav}
+                                  onChange={e => {
+                                    const nextGrav = e.target.value;
+                                    const nextCrit = computeCriticiteFromProbAndGrav(currentProb, nextGrav);
+                                    onUpdateTask &&
+                                      onUpdateTask(item.projId, t.id, {
+                                        probabilite: currentProb as any,
+                                        gravite: nextGrav as any,
+                                        criticite: nextCrit
+                                      });
+                                  }}
+                                  className={`w-full px-1 py-1 text-center text-[8.5px] font-black uppercase tracking-tight rounded-md border shadow-2xs focus:outline-none cursor-pointer truncate ${gravBadgeClass}`}
+                                >
+                                  {RISK_DROPDOWNS.gravite.map(g => (
+                                    <option
+                                      key={g}
+                                      value={g}
+                                      className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold"
+                                    >
+                                      {getTranslatedDropdownLabel(g, language)} ({getGravNumericLevel(g)})
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* 10. [CRITICITÉ] (🤖 100 % Automatique : PROBABILITÉ × GRAVITÉ / IMPACT avec badge couleur) */}
+                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 w-[132px] min-w-[132px] align-top bg-slate-50/60 dark:bg-slate-800/40">
+                                <div
+                                  title={`${isEN ? 'Auto-calculated (Probability × Severity):' : 'Calculé automatiquement (Probabilité × Gravité) :'} ${probNum} × ${gravNum} = ${probNum * gravNum}/16`}
+                                  className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md border text-[9px] font-black uppercase tracking-wider select-none shadow-2xs ${critBadgeClass}`}
+                                >
+                                  <span>{getTranslatedDropdownLabel(computedCrit, language)}</span>
+                                  <span className="opacity-85 font-mono text-[8px]">({probNum * gravNum})</span>
+                                </div>
+                              </td>
+
+                              {/* 11. [GESTIONNAIRE DU RISQUE] (⚡ Pré-rempli automatiquement avec le poste de RESPONSABLES / RACI, modifiable — contenu complet affiché) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[145px] min-w-[145px] max-w-[145px] align-top bg-amber-50/20 dark:bg-slate-800/20">
+                                <textarea
+                                  rows={3}
+                                  value={currentRiskManager}
+                                  onChange={e =>
+                                    onUpdateTask &&
+                                    onUpdateTask(item.projId, t.id, {
+                                      gestionnaireRisque: normalizeRaciFieldList(e.target.value)
+                                    })
+                                  }
+                                  placeholder={isEN ? 'RACI Position (Risk manager)...' : 'Poste RACI (Gestionnaire)...'}
+                                  className="w-full bg-transparent p-1 text-[10px] font-bold text-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none resize-none leading-snug whitespace-normal break-words"
+                                />
+                              </td>
+
+                              {/* 12. [DÉCIDEUR / PROPRIÉTAIRE] (⚡ Pré-rempli automatiquement avec le poste d'Autorité RACI-A, modifiable — contenu complet affiché) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[148px] min-w-[148px] max-w-[148px] align-top">
+                                <textarea
+                                  rows={3}
+                                  value={currentRiskOwner}
+                                  onChange={e =>
+                                    onUpdateTask &&
+                                    onUpdateTask(item.projId, t.id, {
+                                      decideurProprietaire: normalizeRaciFieldList(e.target.value)
+                                    })
+                                  }
+                                  placeholder={isEN ? 'RACI Authority Position...' : 'Poste Décideur / Propriétaire...'}
+                                  className="w-full bg-transparent p-1 text-[10px] font-semibold text-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none resize-none leading-snug whitespace-normal break-words"
+                                />
+                              </td>
+
+                              {/* 13. [ACTION PRÉVENTIVE] (✍️ Saisie manuelle — bascule auto TENDANCE sur baisse dès qu'elle est renseignée) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[165px] min-w-[165px] max-w-[165px] align-top">
+                                <textarea
+                                  rows={4}
+                                  value={t.actionPreventive || ''}
+                                  onChange={e => {
+                                    const nextPreventive = e.target.value;
+                                    const nextTendance: 'stable' | 'hausse' | 'baisse' =
+                                      nextPreventive.trim() !== '' || rStat === 'traité'
+                                        ? 'baisse'
+                                        : metrics.ecartFinDays > 0 || item.effectiveStatus !== 'Terminé'
+                                        ? 'hausse'
+                                        : 'baisse';
+                                    onUpdateTask &&
+                                      onUpdateTask(item.projId, t.id, {
+                                        actionPreventive: nextPreventive,
+                                        tendance: nextTendance
+                                      });
+                                  }}
+                                  placeholder={isEN ? 'Preventive action...' : 'Action préventive...'}
+                                  className="w-full bg-transparent p-1 text-[10px] text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none resize-none leading-snug whitespace-normal break-words"
+                                />
+                              </td>
+
+                              {/* 14. [ACTION CORRECTIVE] (✍️ Saisie manuelle) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[165px] min-w-[165px] max-w-[165px] align-top">
+                                <textarea
+                                  rows={4}
+                                  value={t.actionCorrective || ''}
+                                  onChange={e =>
+                                    onUpdateTask &&
+                                    onUpdateTask(item.projId, t.id, { actionCorrective: e.target.value })
+                                  }
+                                  placeholder={isEN ? 'Corrective action...' : 'Action corrective...'}
+                                  className="w-full bg-transparent p-1 text-[10px] text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none resize-none leading-snug whitespace-normal break-words"
+                                />
+                              </td>
+
+                              {/* 15. [TENDANCE] (⚡ Pré-rempli : hausse si retard/non terminé, baisse si action préventive ou TRAITÉ ; modifiable) */}
+                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 w-[100px] min-w-[100px] max-w-[100px] align-top bg-amber-50/20 dark:bg-slate-800/20">
                                 <select
                                   value={autoRisk.tendance}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { tendance: e.target.value as any })}
-                                  className="bg-transparent p-1 text-center text-[10px] font-bold rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
+                                  onChange={e =>
+                                    onUpdateTask &&
+                                    onUpdateTask(item.projId, t.id, { tendance: e.target.value as any })
+                                  }
+                                  className={`w-full bg-transparent p-1 text-center text-[10px] font-black rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer whitespace-normal break-words leading-tight ${
+                                    autoRisk.tendance === 'hausse'
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : autoRisk.tendance === 'baisse'
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-slate-600 dark:text-slate-300'
+                                  }`}
                                 >
                                   {RISK_DROPDOWNS.tendance.map(tnd => (
                                     <option key={tnd} value={tnd}>{getTranslatedDropdownLabel(tnd, language)}</option>
@@ -3033,30 +3845,8 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                 </select>
                               </td>
 
-                              {/* 14. ACTION PRÉVENTIVE */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-48 min-w-[192px] max-w-[192px] align-top">
-                                <textarea
-                                  rows={4}
-                                  value={t.actionPreventive || ''}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { actionPreventive: e.target.value })}
-                                  placeholder={isEN ? 'Preventive action...' : 'Action préventive...'}
-                                  className="w-full bg-transparent p-1 text-[10px] text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none resize-none leading-snug whitespace-normal break-words"
-                                />
-                              </td>
-
-                              {/* 15. ACTION CORRECTIVE */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-48 min-w-[192px] max-w-[192px] align-top">
-                                <textarea
-                                  rows={4}
-                                  value={t.actionCorrective || ''}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { actionCorrective: e.target.value })}
-                                  placeholder={isEN ? 'Corrective action...' : 'Action corrective...'}
-                                  className="w-full bg-transparent p-1 text-[10px] text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none resize-none leading-snug whitespace-normal break-words"
-                                />
-                              </td>
-
-                              {/* 16. STATUT */}
-                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 align-top">
+                              {/* 16. [STATUT] (⚡ Pré-rempli : À TRAITER / EN TRAITEMENT, bascule sur TRAITÉ si tâche Terminée ; remplit DATE DE RÉSOL. au passage à TRAITÉ) */}
+                              <td className="p-1 text-center border-r border-slate-100 dark:border-slate-800 w-[118px] min-w-[118px] max-w-[118px] align-top bg-amber-50/20 dark:bg-slate-800/20">
                                 <select
                                   value={rStat}
                                   onChange={e => {
@@ -3069,32 +3859,21 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                         : nextRiskStatus === 'en traitement'
                                         ? 'En cours'
                                         : 'À faire';
-                                    const autoByStatus = deriveAutoRiskParameters(
-                                      {
-                                        ...t,
-                                        riskStatus: nextRiskStatus,
-                                        status: mappedStatus,
-                                        probabilite: undefined,
-                                        gravite: undefined,
-                                        tendance: undefined
-                                      },
-                                      currentPestelScore,
-                                      mappedStatus
-                                    );
+                                    const nextTendance: 'stable' | 'hausse' | 'baisse' =
+                                      nextRiskStatus === 'traité' || (t.actionPreventive && t.actionPreventive.trim() !== '')
+                                        ? 'baisse'
+                                        : 'hausse';
                                     onUpdateTask &&
                                       onUpdateTask(item.projId, t.id, {
                                         riskStatus: nextRiskStatus,
                                         status: mappedStatus,
                                         manualBlocked: nextRiskStatus === 'bloqué',
-                                        probabilite: autoByStatus.probabilite,
-                                        gravite: autoByStatus.gravite,
-                                        criticite: autoByStatus.criticite,
-                                        tendance: autoByStatus.tendance,
+                                        tendance: nextTendance,
                                         ...(nextRiskStatus === 'traité'
                                           ? {
                                               actualStartDate: t.actualStartDate || t.dateIdentification || t.startDate || todayISO,
-                                              actualEndDate: t.dateResolution || t.actualEndDate || todayISO,
-                                              dateResolution: t.dateResolution || t.actualEndDate || todayISO
+                                              actualEndDate: displayedEndExec || t.actualEndDate || todayISO,
+                                              dateResolution: todayISO
                                             }
                                           : nextRiskStatus === 'en traitement'
                                           ? {
@@ -3107,7 +3886,7 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                           : { actualStartDate: '', actualEndDate: '', dateResolution: '' })
                                       });
                                   }}
-                                  className="bg-transparent p-1 text-center font-black text-[9px] uppercase tracking-wider rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer"
+                                  className="w-full bg-transparent p-1 text-center font-black text-[10px] uppercase tracking-wider rounded border border-transparent focus:border-orange-400 outline-none cursor-pointer whitespace-normal break-words leading-tight"
                                 >
                                   {RISK_DROPDOWNS.riskStatus.map(s => (
                                     <option key={s} value={s}>{getTranslatedDropdownLabel(s, language)}</option>
@@ -3115,52 +3894,43 @@ export const RiskOperationsView: React.FC<RiskViewCommonProps> = ({
                                 </select>
                               </td>
 
-                              {/* 17. DATE DE RÉSOL. */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] align-top">
-                                <input
-                                  type="date"
-                                  value={
-                                    t.dateResolution ||
-                                    (rStat === 'traité' ? t.actualEndDate || t.endDate || '' : '')
+                              {/* 17. [DATE DE RÉSOL.] (🤖 100 % Automatique : Date du jour au passage à TRAITÉ ou FIN EXÉC, vide sinon) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[105px] min-w-[105px] max-w-[105px] align-top bg-slate-50/60 dark:bg-slate-800/40">
+                                <div
+                                  title={
+                                    isEN
+                                      ? 'Auto-filled with today’s date when status switches to TREATED, or Actual End Date'
+                                      : 'Calculé automatiquement : Date du jour au passage sur TRAITÉ ou Fin Exéc (vide si non traité)'
                                   }
-                                  onChange={e => {
-                                    const nextDate = e.target.value;
-                                    onUpdateTask &&
-                                      onUpdateTask(item.projId, t.id, {
-                                        dateResolution: nextDate,
-                                        actualEndDate: nextDate,
-                                        ...(nextDate
-                                          ? {
-                                              riskStatus: 'traité',
-                                              status: 'Terminé',
-                                              tendance: 'baisse',
-                                              manualBlocked: false,
-                                              actualStartDate: t.actualStartDate || t.dateIdentification || t.startDate || nextDate
-                                            }
-                                          : {})
-                                      });
-                                  }}
-                                  className="w-full bg-transparent p-1 text-center text-[10px] text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none"
-                                />
+                                  className="w-full p-1 text-center font-mono text-[10px] font-bold text-slate-700 dark:text-slate-300 whitespace-normal break-words select-none"
+                                >
+                                  {autoDateResol || '—'}
+                                </div>
                               </td>
 
-                              {/* 18. RÉSOLUTION FINALE */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-48 min-w-[192px] max-w-[192px] align-top">
+                              {/* 18. [RÉSOLUTION FINALE] (✍️ Saisie manuelle) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[165px] min-w-[165px] max-w-[165px] align-top">
                                 <textarea
                                   rows={4}
                                   value={t.resolutionFinale || ''}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { resolutionFinale: e.target.value })}
+                                  onChange={e =>
+                                    onUpdateTask &&
+                                    onUpdateTask(item.projId, t.id, { resolutionFinale: e.target.value })
+                                  }
                                   placeholder={isEN ? 'Final resolution...' : 'Résolution finale...'}
                                   className="w-full bg-transparent p-1 text-[10px] text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none resize-none leading-snug whitespace-normal break-words"
                                 />
                               </td>
 
-                              {/* 19. COMMENTAIRE */}
-                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-48 min-w-[192px] max-w-[192px] align-top">
+                              {/* 19. [COMMENTAIRE] (✍️ Saisie manuelle) */}
+                              <td className="p-1 border-r border-slate-100 dark:border-slate-800 text-[10px] w-[165px] min-w-[165px] max-w-[165px] align-top">
                                 <textarea
                                   rows={4}
                                   value={t.commentaire || ''}
-                                  onChange={e => onUpdateTask && onUpdateTask(item.projId, t.id, { commentaire: e.target.value })}
+                                  onChange={e =>
+                                    onUpdateTask &&
+                                    onUpdateTask(item.projId, t.id, { commentaire: e.target.value })
+                                  }
                                   placeholder={isEN ? 'Comment...' : 'Commentaire...'}
                                   className="w-full bg-transparent p-1 text-[10px] text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 rounded border border-transparent focus:border-orange-400 outline-none resize-none leading-snug whitespace-normal break-words"
                                 />

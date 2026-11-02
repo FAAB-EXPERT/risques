@@ -849,30 +849,34 @@ export const FicheTechniquePages: React.FC<FicheTechniquePagesProps> = ({
                   TABLEAU 1 — PLANIFICATION MACRO DES ACTIVITÉS & JALONS
                 </h2>
 
-                <table className="w-full border-collapse text-[10px]">
+                <table className="w-full table-fixed border-collapse text-[9.5px]">
                   <thead>
                     <tr className="bg-[#0c4a6e] text-white">
-                      <th className="w-12 px-1.5 py-2 text-left border border-[#0c4a6e]">Code</th>
-                      <th className="w-44 px-2 py-2 text-left border border-[#0c4a6e]">
+                      <th className="w-[42px] px-1 py-2 text-left border border-[#0c4a6e] whitespace-normal break-words">
+                        Code
+                      </th>
+                      <th className="w-[165px] px-1.5 py-2 text-left border border-[#0c4a6e] whitespace-normal break-words">
                         Activité / Jalon
                       </th>
-                      <th className="w-24 px-1.5 py-2 text-left border border-[#0c4a6e]">
+                      <th className="w-[90px] px-1.5 py-2 text-left border border-[#0c4a6e] whitespace-normal break-words">
                         Responsable
                       </th>
-                      <th className="w-24 px-1.5 py-2 text-right border border-[#0c4a6e]">
+                      <th className="w-[88px] px-1.5 py-2 text-right border border-[#0c4a6e] whitespace-normal break-words">
                         Budget ({currency})
                       </th>
-                      <th className="w-12 px-1 py-2 text-center border border-[#0c4a6e]">Mois</th>
-                      <th className="w-14 px-1.5 py-2 text-center border border-[#0c4a6e]">
+                      <th className="w-[46px] px-1 py-2 text-center border border-[#0c4a6e] whitespace-normal break-words">
+                        Mois
+                      </th>
+                      <th className="w-[52px] px-1 py-2 text-center border border-[#0c4a6e] whitespace-normal break-words">
                         Antécéd.
                       </th>
-                      <th className="w-20 px-1.5 py-2 text-center border border-[#0c4a6e]">
+                      <th className="w-[68px] px-1 py-2 text-center border border-[#0c4a6e] whitespace-normal break-words">
                         Déb. Prév
                       </th>
-                      <th className="w-20 px-1.5 py-2 text-center border border-[#0c4a6e]">
+                      <th className="w-[68px] px-1 py-2 text-center border border-[#0c4a6e] whitespace-normal break-words">
                         Fin Prév
                       </th>
-                      <th className="w-12 px-1 py-2 text-center border border-[#0c4a6e]">
+                      <th className="w-[44px] px-1 py-2 text-center border border-[#0c4a6e] whitespace-normal break-words">
                         Durée
                       </th>
                     </tr>
@@ -883,31 +887,31 @@ export const FicheTechniquePages: React.FC<FicheTechniquePagesProps> = ({
                         key={`${r.code}-t1-${i}`}
                         className={r.type === 'jalon' ? 'bg-sky-50/50' : 'bg-white'}
                       >
-                        <td className="px-1.5 py-1.5 font-mono font-bold text-[#0c4a6e] border border-slate-200">
+                        <td className="px-1 py-1.5 font-mono font-bold text-[#0c4a6e] border border-slate-200 whitespace-normal break-words align-top">
                           {r.code}
                         </td>
-                        <td className="px-2 py-1.5 font-semibold text-slate-800 border border-slate-200 whitespace-normal break-words">
+                        <td className="px-1.5 py-1.5 font-semibold text-slate-800 border border-slate-200 whitespace-normal break-words align-top">
                           {r.label}
                         </td>
-                        <td className="px-1.5 py-1.5 text-slate-700 border border-slate-200 whitespace-normal break-words">
+                        <td className="px-1.5 py-1.5 text-slate-700 border border-slate-200 whitespace-normal break-words align-top">
                           {r.assignee}
                         </td>
-                        <td className="px-1.5 py-1.5 text-right font-mono font-bold text-slate-800 border border-slate-200">
+                        <td className="px-1.5 py-1.5 text-right font-mono font-bold text-slate-800 border border-slate-200 whitespace-normal break-words align-top">
                           {formatCurrency(r.budget, currency, language)}
                         </td>
-                        <td className="px-1 py-1.5 text-center font-bold border border-slate-200">
+                        <td className="px-1 py-1.5 text-center font-bold border border-slate-200 whitespace-normal break-words align-top">
                           {r.monthLabel}
                         </td>
-                        <td className="px-1.5 py-1.5 text-center font-mono text-slate-600 border border-slate-200">
+                        <td className="px-1 py-1.5 text-center font-mono text-slate-600 border border-slate-200 whitespace-normal break-words align-top">
                           {r.antecedentCode}
                         </td>
-                        <td className="px-1.5 py-1.5 text-center border border-slate-200">
+                        <td className="px-1 py-1.5 text-center border border-slate-200 whitespace-normal break-words align-top">
                           {r.startDate}
                         </td>
-                        <td className="px-1.5 py-1.5 text-center border border-slate-200">
+                        <td className="px-1 py-1.5 text-center border border-slate-200 whitespace-normal break-words align-top">
                           {r.endDate}
                         </td>
-                        <td className="px-1 py-1.5 text-center font-bold text-[#0c4a6e] border border-slate-200">
+                        <td className="px-1 py-1.5 text-center font-bold text-[#0c4a6e] border border-slate-200 whitespace-normal break-words align-top">
                           {r.durationLabel}
                         </td>
                       </tr>
@@ -1079,46 +1083,78 @@ export const FicheTechniquePages: React.FC<FicheTechniquePagesProps> = ({
 
                 <h2 className="text-base font-black uppercase tracking-tight text-[#0c4a6e] mb-3 flex items-center gap-2">
                   <Network className="w-4 h-4 text-[#0284c7]" />
-                  INTERPRÉTATION DYNAMIQUE DU RÉSEAU PERT & CHEMIN CRITIQUE (CPM)
+                  SYNTHÈSE CONDENSÉE DU RÉSEAU PERT (PERT DES TÂCHES + PERT BUDGÉTAIRE)
                 </h2>
 
                 {chunkIdx === 0 && pertSummaries.length > 0 && (
-                  <div className="mb-4 p-4 rounded-xl bg-sky-50 border border-[#90D5FF] space-y-2.5">
+                  <div className="mb-4 p-3.5 rounded-xl bg-sky-50 border border-[#90D5FF] space-y-2.5">
                     {pertSummaries.map(ps => (
-                      <div key={ps.projectId} className="space-y-1 text-[11px] text-slate-700">
-                        <div className="font-black text-[#0c4a6e] uppercase flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#0284c7]" />
-                          {ps.projectName} — Durée Optimale : {ps.projectDuration}j (Chemin
-                          Critique : {ps.criticalPathCodes.join(' → ') || 'N/A'})
+                      <div key={ps.projectId} className="space-y-1 text-[10px] text-slate-700">
+                        <div className="font-black text-[#0c4a6e] uppercase flex flex-wrap items-center justify-between gap-1.5">
+                          <span className="flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-[#0284c7]" />
+                            {ps.projectName} — Durée Critique : {ps.projectDuration}j (Chemin
+                            Critique : {ps.criticalPathCodes.join(' → ') || 'N/A'})
+                          </span>
+                          <span className="text-orange-700 font-black">
+                            Budget : {formatCurrency(ps.totalBudget, currency, language)} (Critique :{' '}
+                            {formatCurrency(ps.criticalPathBudget, currency, language)} · CPI : {ps.cpi})
+                          </span>
                         </div>
-                        <p className="pl-5 text-slate-700">{ps.interpretation.criticalPathSummary}</p>
-                        <p className="pl-5 text-slate-600">{ps.interpretation.slackSummary}</p>
-                        <p className="pl-5 font-semibold text-slate-800">
+                        <p className="pl-5 text-slate-700">
+                          <strong>1. PERT des Tâches :</strong> {ps.interpretation.criticalPathSummary}{' '}
                           {ps.interpretation.riskAndSteeringSummary}
+                        </p>
+                        <p className="pl-5 text-slate-800">
+                          <strong>2. PERT Budgétaire :</strong>{' '}
+                          {ps.budgetInterpretation.evmAndVarianceSummary}{' '}
+                          {ps.budgetInterpretation.financialSteeringSummary}
                         </p>
                       </div>
                     ))}
                   </div>
                 )}
 
-                <table className="w-full border-collapse text-[10px]">
+                <table className="w-full table-fixed border-collapse text-[8.5px]">
                   <thead>
                     <tr className="bg-[#0c4a6e] text-white">
-                      <th className="px-2 py-2 text-left border border-[#0c4a6e]">Code</th>
-                      <th className="px-2 py-2 text-left border border-[#0c4a6e]">
+                      <th className="w-[38px] px-1 py-1.5 text-left border border-[#0c4a6e]">Code</th>
+                      <th className="w-[125px] px-1.5 py-1.5 text-left border border-[#0c4a6e]">
                         Activité / Jalon
                       </th>
-                      <th className="px-1.5 py-2 text-center border border-[#0c4a6e]">Antécéd.</th>
-                      <th className="px-1.5 py-2 text-center border border-[#0c4a6e]">Précéd.</th>
-                      <th className="px-1.5 py-2 text-center border border-[#0c4a6e]">Durée</th>
-                      <th className="px-1.5 py-2 text-center border border-[#0c4a6e]">ES (Tôt)</th>
-                      <th className="px-1.5 py-2 text-center border border-[#0c4a6e]">EF (Tôt)</th>
-                      <th className="px-1.5 py-2 text-center border border-[#0c4a6e]">LS (Tard)</th>
-                      <th className="px-1.5 py-2 text-center border border-[#0c4a6e]">LF (Tard)</th>
-                      <th className="px-1.5 py-2 text-center border border-[#0c4a6e]">
-                        Marge Tot.
+                      <th className="w-[42px] px-1 py-1.5 text-center border border-[#0c4a6e]">
+                        Antéc.
                       </th>
-                      <th className="px-1.5 py-2 text-center border border-[#0c4a6e]">Criticité</th>
+                      <th className="w-[58px] px-1 py-1.5 text-center border border-[#0c4a6e]">
+                        Précéd.
+                      </th>
+                      <th className="w-[34px] px-1 py-1.5 text-center border border-[#0c4a6e]">
+                        Durée
+                      </th>
+                      <th className="w-[54px] px-1 py-1.5 text-center border border-[#0c4a6e]">
+                        ES / EF
+                      </th>
+                      <th className="w-[54px] px-1 py-1.5 text-center border border-[#0c4a6e]">
+                        LS / LF
+                      </th>
+                      <th className="w-[34px] px-1 py-1.5 text-center border border-[#0c4a6e]">
+                        Marge
+                      </th>
+                      <th className="w-[66px] px-1 py-1.5 text-right border border-[#0c4a6e]">
+                        Budget ({currency})
+                      </th>
+                      <th className="w-[66px] px-1 py-1.5 text-right border border-[#0c4a6e]">
+                        Décaissé ({currency})
+                      </th>
+                      <th className="w-[68px] px-1 py-1.5 text-right border border-[#0c4a6e]">
+                        Val. Acquise
+                      </th>
+                      <th className="w-[66px] px-1 py-1.5 text-right border border-[#0c4a6e]">
+                        Coût Réel
+                      </th>
+                      <th className="w-[52px] px-1 py-1.5 text-center border border-[#0c4a6e]">
+                        Criticité
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1127,40 +1163,46 @@ export const FicheTechniquePages: React.FC<FicheTechniquePagesProps> = ({
                         key={node.id}
                         className={node.isCritical ? 'bg-amber-50/70 font-bold' : 'bg-white'}
                       >
-                        <td className="px-2 py-1.5 font-mono font-bold text-[#0c4a6e] border border-slate-200">
+                        <td className="px-1 py-1.5 font-mono font-bold text-[#0c4a6e] border border-slate-200 whitespace-normal break-words">
                           {node.code}
                         </td>
-                        <td className="px-2 py-1.5 text-slate-800 border border-slate-200 whitespace-normal break-words">
+                        <td className="px-1.5 py-1.5 text-slate-800 border border-slate-200 whitespace-normal break-words">
                           {node.name}
                         </td>
-                        <td className="px-1.5 py-1.5 text-center font-mono border border-slate-200">
+                        <td className="px-1 py-1.5 text-center font-mono border border-slate-200 whitespace-normal break-words">
                           {node.antecedentCode}
                         </td>
-                        <td className="px-1.5 py-1.5 text-center font-mono text-[9px] border border-slate-200">
+                        <td className="px-1 py-1.5 text-center font-mono text-[8px] border border-slate-200 whitespace-normal break-words">
                           {node.precedingChainCodes}
                         </td>
-                        <td className="px-1.5 py-1.5 text-center border border-slate-200">
+                        <td className="px-1 py-1.5 text-center border border-slate-200">
                           {node.duration}j
                         </td>
-                        <td className="px-1.5 py-1.5 text-center border border-slate-200">
-                          J+{node.es}
+                        <td className="px-1 py-1.5 text-center font-mono text-[8px] border border-slate-200">
+                          J+{node.es} / J+{node.ef}
                         </td>
-                        <td className="px-1.5 py-1.5 text-center border border-slate-200">
-                          J+{node.ef}
+                        <td className="px-1 py-1.5 text-center font-mono text-[8px] border border-slate-200">
+                          J+{node.ls} / J+{node.lf}
                         </td>
-                        <td className="px-1.5 py-1.5 text-center border border-slate-200">
-                          J+{node.ls}
-                        </td>
-                        <td className="px-1.5 py-1.5 text-center border border-slate-200">
-                          J+{node.lf}
-                        </td>
-                        <td className="px-1.5 py-1.5 text-center border border-slate-200">
+                        <td className="px-1 py-1.5 text-center border border-slate-200">
                           {node.totalFloat}j
                         </td>
-                        <td className="px-1.5 py-1.5 text-center border border-slate-200">
+                        <td className="px-1 py-1.5 text-right font-mono border border-slate-200 whitespace-normal break-words">
+                          {formatCurrency(node.budget, currency, language)}
+                        </td>
+                        <td className="px-1 py-1.5 text-right font-mono border border-slate-200 whitespace-normal break-words">
+                          {formatCurrency(node.montantDecaissement, currency, language)}
+                        </td>
+                        <td className="px-1 py-1.5 text-right font-mono text-emerald-700 border border-slate-200 whitespace-normal break-words">
+                          {formatCurrency(node.valeurAcquise, currency, language)} ({node.progresBudget}%)
+                        </td>
+                        <td className="px-1 py-1.5 text-right font-mono border border-slate-200 whitespace-normal break-words">
+                          {formatCurrency(node.coutReel, currency, language)}
+                        </td>
+                        <td className="px-1 py-1.5 text-center border border-slate-200">
                           {node.isCritical ? (
-                            <span className="inline-flex items-center gap-1 text-amber-800 font-black">
-                              <AlertTriangle className="w-3 h-3" /> CRITIQUE
+                            <span className="inline-flex items-center gap-0.5 text-amber-800 font-black">
+                              <AlertTriangle className="w-2.5 h-2.5" /> CRITIQUE
                             </span>
                           ) : (
                             <span className="text-emerald-700">Souple</span>

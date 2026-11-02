@@ -27,6 +27,7 @@ import {
   getTodayISO
 } from '../pertUtils';
 import { formatCurrency, convertFromFCFA, convertToFCFA } from '../i18n';
+import { normalizeRaciActorToPosition, normalizeRaciFieldList } from '../db';
 
 interface RaciMultiActorCellProps {
   value: string;
@@ -44,10 +45,40 @@ const isNeantToken = (val?: string): boolean => {
   return clean === 'néant' || clean === 'neant' || clean === 'none';
 };
 
+const computeWrappedTextareaRows = (
+  text: string,
+  charsPerLine = 13,
+  minRows = 1
+): number => {
+  const clean = (text || '').trim();
+  if (!clean) return minRows;
+  const words = clean.split(/\s+/);
+  let lines = 1;
+  let currentLen = 0;
+  for (const word of words) {
+    if (word.length > charsPerLine) {
+      if (currentLen > 0) {
+        lines += 1;
+        currentLen = 0;
+      }
+      lines += Math.floor(word.length / charsPerLine);
+      currentLen = word.length % charsPerLine;
+    } else if (currentLen === 0) {
+      currentLen = word.length;
+    } else if (currentLen + 1 + word.length <= charsPerLine) {
+      currentLen += 1 + word.length;
+    } else {
+      lines += 1;
+      currentLen = word.length;
+    }
+  }
+  return Math.max(minRows, lines);
+};
+
 const RaciMultiActorCell: React.FC<RaciMultiActorCellProps> = ({
   value,
   onChange,
-  placeholder = 'Ajouter...',
+  placeholder = 'Ajouter un poste / fonction...',
   isPrimary = false,
   suggestions = [],
   datalistId,
@@ -62,7 +93,7 @@ const RaciMultiActorCell: React.FC<RaciMultiActorCellProps> = ({
     if (!value || !value.trim()) return [];
     return value
       .split(',')
-      .map(s => s.trim())
+      .map(s => normalizeRaciActorToPosition(s.trim()))
       .filter(Boolean);
   }, [value]);
 
@@ -78,7 +109,7 @@ const RaciMultiActorCell: React.FC<RaciMultiActorCellProps> = ({
 
   const handleAddActor = (overrideVal?: string) => {
     const rawToUse = overrideVal !== undefined ? overrideVal : draft;
-    const trimmed = rawToUse.trim().replace(/,/g, '');
+    const trimmed = normalizeRaciActorToPosition(rawToUse.trim().replace(/,/g, ''));
     if (!trimmed) return;
     if (allowNeant && isNeantToken(trimmed)) {
       handleSelectNeant();
@@ -96,7 +127,7 @@ const RaciMultiActorCell: React.FC<RaciMultiActorCellProps> = ({
   };
 
   const handleEditActor = (indexToEdit: number, newName: string) => {
-    const cleaned = newName.replace(/,/g, '');
+    const cleaned = normalizeRaciActorToPosition(newName.replace(/,/g, ''));
     const next = actors.map((act, idx) => (idx === indexToEdit ? cleaned : act));
     onChange(next.filter(s => s.trim().length > 0).join(', '));
   };
@@ -151,15 +182,18 @@ const RaciMultiActorCell: React.FC<RaciMultiActorCellProps> = ({
         </div>
       )}
 
-      {/* Existing actors list */}
+      {/* Existing actors list — full position titles displayed without truncation */}
       {actors.length > 0 && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-col gap-1 w-full">
           {actors.map((actor, idx) => {
             const actorIsNeant = isNeantToken(actor);
+            const displayActor = actorIsNeant
+              ? actor
+              : normalizeRaciActorToPosition(actor);
             return (
               <div
-                key={`${idx}-${actor}`}
-                className={`inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold border ${
+                key={`${idx}-${displayActor}`}
+                className={`w-full flex items-start justify-between gap-1 rounded px-1.5 py-1 text-[10px] font-bold border whitespace-normal break-words ${
                   actorIsNeant
                     ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 italic'
                     : isPrimary
@@ -167,25 +201,29 @@ const RaciMultiActorCell: React.FC<RaciMultiActorCellProps> = ({
                     : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200'
                 }`}
               >
-                <input
-                  type="text"
-                  value={actor}
-                  onChange={e => handleEditActor(idx, e.target.value)}
-                  style={{ width: `${Math.max(actor.length + 1, 6)}ch` }}
-                  className="bg-transparent text-[9px] font-bold focus:outline-none min-w-[40px] max-w-[120px]"
+                <textarea
+                  rows={computeWrappedTextareaRows(displayActor, 12, 1)}
+                  value={displayActor}
+                  onChange={e =>
+                    handleEditActor(
+                      idx,
+                      normalizeRaciActorToPosition(e.target.value)
+                    )
+                  }
+                  className="w-full bg-transparent text-[10px] font-bold leading-snug focus:outline-none resize-none whitespace-normal break-words"
                 />
                 <button
                   type="button"
                   onClick={() =>
                     actorIsNeant ? handleRemoveActor(idx) : setPendingRemoveIdx(idx)
                   }
-                  className="text-slate-400 hover:text-rose-600 p-0.5 cursor-pointer"
+                  className="text-slate-400 hover:text-rose-600 p-0.5 cursor-pointer shrink-0 mt-0.5"
                   title={
                     actorIsNeant
                       ? language === 'EN'
                         ? 'Clear None'
                         : 'Retirer Néant'
-                      : 'Retirer ce responsable'
+                      : 'Retirer ce poste'
                   }
                 >
                   <X className="w-2.5 h-2.5" />
@@ -197,41 +235,43 @@ const RaciMultiActorCell: React.FC<RaciMultiActorCellProps> = ({
       )}
 
       {/* Add new actor inline + Néant choice for Consulté (C) & Informé (I) */}
-      <div className="flex items-center gap-1">
-        <input
-          type="text"
-          list={datalistId}
-          value={draft}
-          placeholder={placeholder}
-          onChange={e => {
-            const v = e.target.value;
-            if (allowNeant && isNeantToken(v)) {
-              handleSelectNeant();
-            } else {
-              setDraft(v);
-            }
-          }}
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleAddActor();
-            }
-          }}
-          className="flex-1 min-w-[65px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[9px] font-semibold text-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF]"
-        />
-        <button
-          type="button"
-          onClick={() => handleAddActor()}
-          className="px-1.5 py-0.5 rounded bg-[#0c4a6e] hover:bg-[#075985] text-[#90D5FF] text-[9px] font-black flex items-center justify-center shrink-0 cursor-pointer"
-          title="Ajouter un responsable"
-        >
-          <Plus className="w-2.5 h-2.5" />
-        </button>
+      <div className="flex flex-wrap items-center gap-1 w-full">
+        <div className="flex items-center gap-1 w-full">
+          <input
+            type="text"
+            list={datalistId}
+            value={draft}
+            placeholder={placeholder}
+            onChange={e => {
+              const v = e.target.value;
+              if (allowNeant && isNeantToken(v)) {
+                handleSelectNeant();
+              } else {
+                setDraft(v);
+              }
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddActor();
+              }
+            }}
+            className="flex-1 min-w-0 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold text-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF]"
+          />
+          <button
+            type="button"
+            onClick={() => handleAddActor()}
+            className="px-1.5 py-0.5 rounded bg-[#0c4a6e] hover:bg-[#075985] text-[#90D5FF] text-[10px] font-black flex items-center justify-center shrink-0 cursor-pointer"
+            title="Ajouter un poste"
+          >
+            <Plus className="w-2.5 h-2.5" />
+          </button>
+        </div>
         {allowNeant && !isCurrentlyNeant && (
           <button
             type="button"
             onClick={handleSelectNeant}
-            className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 dark:hover:bg-amber-950/60 border border-slate-300 dark:border-slate-700 hover:border-amber-400 text-slate-600 dark:text-slate-300 hover:text-amber-800 dark:hover:text-amber-300 text-[8.5px] font-extrabold shrink-0 cursor-pointer transition-colors"
+            className="w-full px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 dark:hover:bg-amber-950/60 border border-slate-300 dark:border-slate-700 hover:border-amber-400 text-slate-600 dark:text-slate-300 hover:text-amber-800 dark:hover:text-amber-300 text-[10px] font-extrabold text-center cursor-pointer transition-colors"
             title={
               language === 'EN'
                 ? 'Select "None" if there is no actor for this column'
@@ -331,17 +371,31 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
   }, [filteredAxes]);
 
   const allAssignees = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>([
+      'Coordonnateur Général PMO',
+      'Architecte Urbaniste SI & Lead Technique',
+      'Directeur des Ressources Humaines (DRH UGP)',
+      'Responsable Ingénierie Data & Cybersécurité (RSSI)',
+      'Spécialiste Passation des Marchés (SPM)',
+      'Président du Comité de Pilotage (COPIL / Tutelle)',
+      'Directeur de la Régulation & du Contrôle',
+      'Chef de Mission Prestataire SI & Cloud',
+      'Consultant Formateur Principal PMP / GAR',
+      'Chargé de Programme Bailleur (TTL / PTF)',
+      'Représentant du Collectif des Bénéficiaires'
+    ]);
     axes.forEach(ax => {
       (ax.projects || []).forEach(pr => {
         (pr.tasks || []).forEach(tk => {
-          if (tk.assignee && tk.assignee.trim()) {
-            tk.assignee
-              .split(',')
-              .map(s => s.trim())
-              .filter(Boolean)
-              .forEach(actor => set.add(actor));
-          }
+          [tk.assignee, tk.raciR, tk.autorite, tk.raciA, tk.consulte, tk.raciC, tk.informe, tk.raciI]
+            .filter(Boolean)
+            .forEach(raw => {
+              (raw || '')
+                .split(',')
+                .map(s => normalizeRaciActorToPosition(s.trim()))
+                .filter(s => s.length > 0 && !isNeantToken(s) && s !== '—')
+                .forEach(actor => set.add(actor));
+            });
         });
       });
     });
@@ -495,7 +549,11 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
             {mode === 'raci' && (
               <>
                 <Users className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-orange-600 dark:text-orange-400 shrink-0" />
-                <span>{language === 'EN' ? 'RACI Matrix' : 'Matrice RACI'}</span>
+                <span>
+                  {language === 'EN'
+                    ? 'RACI Matrix (Positions / Functions)'
+                    : 'Matrice RACI (Postes / Fonctions)'}
+                </span>
               </>
             )}
           </h2>
@@ -510,8 +568,8 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                 : 'Seules Déb. Exéc et Fin Exéc sont modifiables.')}
             {mode === 'raci' &&
               (language === 'EN'
-                ? 'Add multiple actors in R, C and I (+). Single Authority (A).'
-                : 'Ajoutez plusieurs responsables dans R, C et I (+). Autorité (A) unique.')}
+                ? 'Enter job positions (functions) in R, A, C and I (+). Single Authority (A).'
+                : 'Renseignez les postes (fonctions) dans R, A, C et I (+). Autorité (A) unique.')}
           </p>
         </div>
 
@@ -661,91 +719,99 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
       {/* SINGLE UNIFIED TABLE PER TAB (First row + First 2 columns "Code" & "Activité / Jalon" locked/sticky!) */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="overflow-auto max-h-[75vh] sm:max-h-[calc(100vh-185px)] relative">
-          <table className="w-full min-w-[760px] border-separate border-spacing-0 table-compact">
+          <table
+            className={`border-separate border-spacing-0 table-compact ${
+              mode === 'raci'
+                ? 'w-max table-fixed unified-cell-font-table'
+                : mode === 'planification'
+                ? 'w-full min-w-[760px] table-fixed'
+                : 'w-full min-w-[760px]'
+            }`}
+          >
             <thead className="sticky top-0 z-30">
               {mode === 'planification' && (
                 <tr className="bg-[#c2410c] text-white">
                   {/* 1. Code (Locked Row 1 + Col 1) */}
                   <th
                     style={{ position: 'sticky', top: 0, left: 0 }}
-                    className="sticky top-0 left-0 z-40 bg-[#c2410c] w-[48px] min-w-[48px] max-w-[48px] text-left border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 left-0 z-40 bg-[#c2410c] w-[48px] min-w-[48px] max-w-[48px] text-left border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     Code
                   </th>
                   {/* 2. Activité / Jalon (Locked Row 1 + Col 2) */}
                   <th
                     style={{ position: 'sticky', top: 0, left: 48 }}
-                    className="sticky top-0 left-[48px] z-40 bg-[#c2410c] w-[116px] min-w-[116px] max-w-[116px] sm:w-[136px] sm:min-w-[136px] sm:max-w-[136px] text-left border-r-2 border-orange-200 border-b-2 border-orange-200 shadow-[3px_0_6px_rgba(0,0,0,0.28)]"
+                    className="sticky top-0 left-[48px] z-40 bg-[#c2410c] w-[116px] min-w-[116px] max-w-[116px] sm:w-[136px] sm:min-w-[136px] sm:max-w-[136px] text-left border-r-2 border-orange-200 border-b-2 border-orange-200 shadow-[3px_0_6px_rgba(0,0,0,0.28)] whitespace-normal break-words leading-tight"
                   >
                     {language === 'EN' ? 'Activity / Milestone' : 'Activité / Jalon'}
                   </th>
                   {/* 3. Responsable */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-24 min-w-[84px] text-left border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[92px] min-w-[92px] max-w-[92px] text-left border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     {language === 'EN' ? 'Owner' : 'Responsable'}
                   </th>
                   {/* 4. Livrable */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-28 min-w-[100px] text-left border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[110px] min-w-[110px] max-w-[110px] text-left border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     {language === 'EN' ? 'Deliverable' : 'Livrable'}
                   </th>
                   {/* 5. Bailleur / Financement */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-32 min-w-[120px] text-left border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[116px] min-w-[116px] max-w-[116px] text-left border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     {language === 'EN' ? 'Donor / Funding' : 'Bailleur / Financement'}
                   </th>
                   {/* 6. Budget */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-24 min-w-[84px] text-right border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[88px] min-w-[88px] max-w-[88px] text-right border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     Budget ({currency})
                   </th>
-                  {/* 5. Mois */}
+                  {/* 7. Mois */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-14 min-w-[50px] text-center border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[50px] min-w-[50px] max-w-[50px] text-center border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     {language === 'EN' ? 'Month' : 'Mois'}
                   </th>
-                  {/* 6. Antécéd. */}
+                  {/* 8. Antécéd. */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-20 min-w-[70px] text-center border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[66px] min-w-[66px] max-w-[66px] text-center border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     {language === 'EN' ? 'Predec.' : 'Antécéd.'}
                   </th>
-                  {/* 7. Déb. Prév */}
+                  {/* 9. Déb. Prév */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-28 min-w-[100px] text-center border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[96px] min-w-[96px] max-w-[96px] text-center border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     {language === 'EN' ? 'Plan. Start' : 'Déb. Prév'}
                   </th>
-                  {/* 8. Fin Prév */}
+                  {/* 10. Fin Prév */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-28 min-w-[100px] text-center border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[96px] min-w-[96px] max-w-[96px] text-center border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     {language === 'EN' ? 'Plan. End' : 'Fin Prév'}
                   </th>
-                  {/* 9. Durée */}
+                  {/* 11. Durée */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-14 min-w-[48px] text-center border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[48px] min-w-[48px] max-w-[48px] text-center border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     {language === 'EN' ? 'Dur.' : 'Durée'}
                   </th>
-                  {/* 10. Actions */}
+                  {/* 12. Actions */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-12 min-w-[44px] text-center border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[44px] min-w-[44px] max-w-[44px] text-center border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     Actions
                   </th>
@@ -846,55 +912,55 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                   {/* 1. Code (Locked Row 1 + Col 1) */}
                   <th
                     style={{ position: 'sticky', top: 0, left: 0 }}
-                    className="sticky top-0 left-0 z-40 bg-[#c2410c] w-[48px] min-w-[48px] max-w-[48px] text-left border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 left-0 z-40 bg-[#c2410c] w-[48px] min-w-[48px] max-w-[48px] text-left text-[10px] border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
                     Code
                   </th>
                   {/* 2. Activité / Jalon (Locked Row 1 + Col 2) */}
                   <th
                     style={{ position: 'sticky', top: 0, left: 48 }}
-                    className="sticky top-0 left-[48px] z-40 bg-[#c2410c] w-[116px] min-w-[116px] max-w-[116px] sm:w-[136px] sm:min-w-[136px] sm:max-w-[136px] text-left border-r-2 border-orange-200 border-b-2 border-orange-200 shadow-[3px_0_6px_rgba(0,0,0,0.28)]"
+                    className="sticky top-0 left-[48px] z-40 bg-[#c2410c] w-[140px] min-w-[140px] max-w-[140px] sm:w-[170px] sm:min-w-[170px] sm:max-w-[170px] text-left text-[10px] border-r-2 border-orange-200 border-b-2 border-orange-200 shadow-[3px_0_6px_rgba(0,0,0,0.28)] whitespace-normal break-words leading-tight"
                   >
                     {language === 'EN' ? 'Activity / Milestone' : 'Activité / Jalon'}
                   </th>
-                  {/* 3. Réalisateur (R) = Responsable (Multiple allowed) */}
+                  {/* 3. Réalisateur (R) = Poste / Fonction (Réduit d'1/3 — intitulés affichés intégralement) */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 w-44 min-w-[140px] text-left border-r border-orange-700 border-b-2 border-orange-200 bg-orange-800"
+                    className="sticky top-0 z-30 w-[130px] min-w-[130px] max-w-[130px] text-left text-[10px] border-r border-orange-700 border-b-2 border-orange-200 bg-orange-800 whitespace-normal break-words leading-tight"
                   >
-                    {language === 'EN' ? 'Responsible (R)' : 'Réalisateur (R)'}{' '}
-                    <span className="text-[8px] font-normal text-orange-200">
-                      {language === 'EN' ? '(+ Actors)' : '(+ Responsables)'}
+                    {language === 'EN' ? 'Responsible Position (R)' : 'Poste Réalisateur (R)'}{' '}
+                    <span className="block text-[8px] font-normal text-orange-200 mt-0.5">
+                      {language === 'EN' ? '(+ Positions / Functions)' : '(+ Postes / Fonctions)'}
                     </span>
                   </th>
-                  {/* 4. Autorité (A) (Single authority only!) */}
+                  {/* 4. Autorité (A) (Réduit d'1/3 — 1 seul Poste affiché intégralement) */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-36 min-w-[115px] text-left border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[120px] min-w-[120px] max-w-[120px] text-left text-[10px] border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
-                    {language === 'EN' ? 'Accountable (A)' : 'Autorité (A)'}{' '}
-                    <span className="text-[8px] font-normal text-amber-300">
-                      {language === 'EN' ? '(1 only)' : '(1 seule)'}
+                    {language === 'EN' ? 'Accountable Position (A)' : 'Poste Autorité (A)'}{' '}
+                    <span className="block text-[8px] font-normal text-amber-300 mt-0.5">
+                      {language === 'EN' ? '(1 Position only)' : '(1 seul Poste)'}
                     </span>
                   </th>
-                  {/* 5. Consulté (C) (Multiple allowed) */}
+                  {/* 5. Consulté (C) (Réduit d'1/3 — intitulés affichés intégralement) */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-44 min-w-[140px] text-left border-r border-orange-700 border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[130px] min-w-[130px] max-w-[130px] text-left text-[10px] border-r border-orange-700 border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
-                    {language === 'EN' ? 'Consulted (C)' : 'Consulté (C)'}{' '}
-                    <span className="text-[8px] font-normal text-orange-200">
-                      {language === 'EN' ? '(+ Actors)' : '(+ Responsables)'}
+                    {language === 'EN' ? 'Consulted Position (C)' : 'Poste Consulté (C)'}{' '}
+                    <span className="block text-[8px] font-normal text-orange-200 mt-0.5">
+                      {language === 'EN' ? '(+ Positions / Functions)' : '(+ Postes / Fonctions)'}
                     </span>
                   </th>
-                  {/* 6. Informé (I) (Multiple allowed) */}
+                  {/* 6. Informé (I) (Réduit d'1/3 — intitulés affichés intégralement) */}
                   <th
                     style={{ position: 'sticky', top: 0 }}
-                    className="sticky top-0 z-30 bg-[#c2410c] w-44 min-w-[140px] text-left border-b-2 border-orange-200"
+                    className="sticky top-0 z-30 bg-[#c2410c] w-[130px] min-w-[130px] max-w-[130px] text-left text-[10px] border-b-2 border-orange-200 whitespace-normal break-words leading-tight"
                   >
-                    {language === 'EN' ? 'Informed (I)' : 'Informé (I)'}{' '}
-                    <span className="text-[8px] font-normal text-orange-200">
-                      {language === 'EN' ? '(+ Actors)' : '(+ Responsables)'}
+                    {language === 'EN' ? 'Informed Position (I)' : 'Poste Informé (I)'}{' '}
+                    <span className="block text-[8px] font-normal text-orange-200 mt-0.5">
+                      {language === 'EN' ? '(+ Positions / Functions)' : '(+ Postes / Fonctions)'}
                     </span>
                   </th>
                 </tr>
@@ -1088,17 +1154,17 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                 {/* 2. Activité / Jalon (Locked Col 2) */}
                                 <td
                                   style={{ position: 'sticky', left: 48 }}
-                                  className={`sticky left-[48px] z-20 ${stickyCellBg} w-[116px] min-w-[116px] max-w-[116px] sm:w-[136px] sm:min-w-[136px] sm:max-w-[136px] align-top border-r-2 border-orange-500 dark:border-orange-400 border-b border-slate-200 dark:border-slate-800 shadow-[3px_0_6px_rgba(234,88,12,0.18)] whitespace-normal break-words`}
+                                  className={`sticky left-[48px] z-20 ${stickyCellBg} w-[116px] min-w-[116px] max-w-[116px] sm:w-[136px] sm:min-w-[136px] sm:max-w-[136px] align-top border-r-2 border-orange-500 dark:border-orange-400 border-b border-slate-200 dark:border-slate-800 shadow-[3px_0_6px_rgba(234,88,12,0.18)] whitespace-normal break-words overflow-hidden`}
                                 >
                                   <textarea
-                                    rows={2}
+                                    rows={Math.max(2, Math.ceil(((task.name || '').length || 1) / 16))}
                                     value={task.name}
                                     onChange={e =>
                                       onUpdateTask(projectId, task.id, {
                                         name: e.target.value
                                       })
                                     }
-                                    className={`w-full bg-transparent text-[10px] leading-tight resize-y whitespace-normal break-words focus:outline-none focus:ring-1 focus:ring-orange-400 rounded p-0.5 ${
+                                    className={`w-full bg-transparent text-[10px] leading-tight resize-none whitespace-normal break-words focus:outline-none focus:ring-1 focus:ring-orange-400 rounded p-0.5 ${
                                       isJalon
                                         ? 'font-bold italic text-slate-700 dark:text-slate-200'
                                         : 'font-extrabold text-slate-900 dark:text-white'
@@ -1106,29 +1172,29 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                   />
                                 </td>
 
-                                {/* 3. Responsable (= Réalisateur R) */}
-                                <td className="align-top border-r border-slate-200 dark:border-slate-800">
-                                  <input
-                                    type="text"
-                                    value={task.assignee || ''}
+                                {/* 3. Responsable (= Réalisateur R — Poste / Fonction) */}
+                                <td className="w-[92px] min-w-[92px] max-w-[92px] align-top border-r border-slate-200 dark:border-slate-800 whitespace-normal break-words overflow-hidden">
+                                  <textarea
+                                    rows={Math.max(2, Math.ceil(((normalizeRaciFieldList(task.assignee || '')).length || 1) / 13))}
+                                    value={normalizeRaciFieldList(task.assignee || '')}
                                     placeholder={
                                       language === 'EN'
-                                        ? 'Owner / Actor...'
-                                        : 'Responsable...'
+                                        ? 'Position (R)...'
+                                        : 'Poste (R)...'
                                     }
                                     onChange={e =>
                                       onUpdateTask(projectId, task.id, {
-                                        assignee: e.target.value
+                                        assignee: normalizeRaciFieldList(e.target.value)
                                       })
                                     }
-                                    className="w-full bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-200 px-1 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF]"
+                                    className="w-full bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-200 px-1 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF] whitespace-normal break-words leading-tight resize-none"
                                   />
                                 </td>
 
                                 {/* 4. Livrable */}
-                                <td className="align-top border-r border-slate-200 dark:border-slate-800">
-                                  <input
-                                    type="text"
+                                <td className="w-[110px] min-w-[110px] max-w-[110px] align-top border-r border-slate-200 dark:border-slate-800 whitespace-normal break-words overflow-hidden">
+                                  <textarea
+                                    rows={Math.max(2, Math.ceil(((task.livrable || '').length || 1) / 15))}
                                     value={task.livrable || ''}
                                     placeholder={
                                       language === 'EN'
@@ -1140,14 +1206,14 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                         livrable: e.target.value
                                       })
                                     }
-                                    className="w-full bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-200 px-1 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF]"
+                                    className="w-full bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-200 px-1 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF] whitespace-normal break-words leading-tight resize-none"
                                   />
                                 </td>
 
                                 {/* 5. Bailleur / Financement */}
-                                <td className="align-top border-r border-slate-200 dark:border-slate-800">
-                                  <input
-                                    type="text"
+                                <td className="w-[116px] min-w-[116px] max-w-[116px] align-top border-r border-slate-200 dark:border-slate-800 whitespace-normal break-words overflow-hidden">
+                                  <textarea
+                                    rows={Math.max(2, Math.ceil(((task.bailleur || '').length || 1) / 16))}
                                     value={task.bailleur || ''}
                                     placeholder={
                                       language === 'EN'
@@ -1159,12 +1225,12 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                         bailleur: e.target.value
                                       })
                                     }
-                                    className="w-full bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-200 px-1 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF]"
+                                    className="w-full bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-200 px-1 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF] whitespace-normal break-words leading-tight resize-none"
                                   />
                                 </td>
 
                                 {/* 6. Budget */}
-                                <td className="align-top border-r border-slate-200 dark:border-slate-800">
+                                <td className="w-[88px] min-w-[88px] max-w-[88px] align-top border-r border-slate-200 dark:border-slate-800 whitespace-normal break-words overflow-hidden">
                                   <input
                                     type="number"
                                     value={displayedBudget}
@@ -1176,17 +1242,17 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                         )
                                       })
                                     }
-                                    className="w-full bg-transparent text-right font-mono text-[10px] font-bold text-slate-900 dark:text-white px-1 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF]"
+                                    className="w-full bg-transparent text-right font-mono text-[10px] font-bold text-slate-900 dark:text-white px-0.5 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF]"
                                   />
                                 </td>
 
-                                {/* 5. Mois (Auto) */}
-                                <td className="align-top text-center font-bold text-[10px] text-slate-700 dark:text-slate-300 border-r border-slate-200 dark:border-slate-800">
+                                {/* 7. Mois (Auto) */}
+                                <td className="w-[50px] min-w-[50px] max-w-[50px] align-top text-center font-bold text-[10px] text-slate-700 dark:text-slate-300 border-r border-slate-200 dark:border-slate-800 whitespace-normal break-words leading-tight">
                                   {monthStr}
                                 </td>
 
-                                {/* 6. Antécéd. */}
-                                <td className="align-top text-center border-r border-slate-200 dark:border-slate-800">
+                                {/* 8. Antécéd. */}
+                                <td className="w-[66px] min-w-[66px] max-w-[66px] align-top text-center border-r border-slate-200 dark:border-slate-800 whitespace-normal break-words overflow-hidden">
                                   <select
                                     value={task.antecedent || '—'}
                                     onChange={e =>
@@ -1194,7 +1260,7 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                         antecedent: e.target.value
                                       })
                                     }
-                                    className="w-full bg-slate-50 dark:bg-slate-800 font-mono text-[10px] font-bold text-slate-800 dark:text-slate-200 rounded px-1 py-0.5"
+                                    className="w-full bg-slate-50 dark:bg-slate-800 font-mono text-[10px] font-bold text-slate-800 dark:text-slate-200 rounded px-0.5 py-0.5"
                                   >
                                     <option value="—">—</option>
                                     {otherProjectTasks.map(opt => (
@@ -1205,8 +1271,8 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                   </select>
                                 </td>
 
-                                {/* 7. Déb. Prév */}
-                                <td className="align-top text-center border-r border-slate-200 dark:border-slate-800">
+                                {/* 9. Déb. Prév */}
+                                <td className="w-[96px] min-w-[96px] max-w-[96px] align-top text-center border-r border-slate-200 dark:border-slate-800 whitespace-normal break-words overflow-hidden">
                                   <input
                                     type="date"
                                     value={task.startDate}
@@ -1218,12 +1284,12 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                           : {})
                                       })
                                     }
-                                    className="bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-200 rounded px-1 py-0.5"
+                                    className="w-full bg-transparent text-[9.5px] font-semibold text-slate-800 dark:text-slate-200 rounded px-0.5 py-0.5 text-center"
                                   />
                                 </td>
 
-                                {/* 8. Fin Prév */}
-                                <td className="align-top text-center border-r border-slate-200 dark:border-slate-800">
+                                {/* 10. Fin Prév */}
+                                <td className="w-[96px] min-w-[96px] max-w-[96px] align-top text-center border-r border-slate-200 dark:border-slate-800 whitespace-normal break-words overflow-hidden">
                                   <input
                                     type="date"
                                     value={task.endDate}
@@ -1232,17 +1298,17 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                         endDate: e.target.value
                                       })
                                     }
-                                    className="bg-transparent text-[10px] font-semibold text-slate-800 dark:text-slate-200 rounded px-1 py-0.5"
+                                    className="w-full bg-transparent text-[9.5px] font-semibold text-slate-800 dark:text-slate-200 rounded px-0.5 py-0.5 text-center"
                                   />
                                 </td>
 
-                                {/* 9. Durée (Auto) */}
-                                <td className="align-top text-center font-mono font-black text-[10px] text-orange-600 dark:text-orange-400 border-r border-slate-200 dark:border-slate-800">
+                                {/* 11. Durée (Auto) */}
+                                <td className="w-[48px] min-w-[48px] max-w-[48px] align-top text-center font-mono font-black text-[10px] text-orange-600 dark:text-orange-400 border-r border-slate-200 dark:border-slate-800 whitespace-normal break-words leading-tight">
                                   {metrics.plannedDurationLabel}
                                 </td>
 
-                                {/* 10. Actions (Delete with Validation) */}
-                                <td className="align-top text-center">
+                                {/* 12. Actions (Delete with Validation) */}
+                                <td className="w-[44px] min-w-[44px] max-w-[44px] align-top text-center">
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -1327,9 +1393,9 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                   </div>
                                 </td>
 
-                                {/* 3. Responsable (Read-only) */}
+                                {/* 3. Responsable (Read-only — Poste RACI) */}
                                 <td className="align-top border-r border-slate-200 dark:border-slate-800 text-[10px] font-semibold text-slate-700 dark:text-slate-300 whitespace-normal break-words">
-                                  {task.assignee}
+                                  {normalizeRaciFieldList(task.assignee || '')}
                                 </td>
 
                                 {/* 4. Statut (Auto-calculated; click to toggle Bloqué) */}
@@ -1510,8 +1576,23 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                           }
 
                           // ==========================================
-                          // ROW MODE 3 : MATRICE RACI (6 Columns — Sticky First 2 cols, Multi-actor add in R, C, I)
+                          // ROW MODE 3 : MATRICE RACI (6 Columns — Sticky First 2 cols, Multi-position in R, C, I, full cell display)
                           // ==========================================
+                          const normalizedR = normalizeRaciFieldList(
+                            [task.assignee, task.raciR, task.responsabilite]
+                              .filter(Boolean)
+                              .join(', ')
+                          );
+                          const normalizedA = normalizeRaciActorToPosition(
+                            (task.autorite || task.raciA || '').split(/[,;/]+/)[0] || ''
+                          );
+                          const normalizedC = normalizeRaciFieldList(
+                            [task.consulte, task.raciC].filter(Boolean).join(', ')
+                          );
+                          const normalizedI = normalizeRaciFieldList(
+                            [task.informe, task.raciI].filter(Boolean).join(', ')
+                          );
+
                           return (
                             <tr
                               key={task.id}
@@ -1527,7 +1608,7 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                 className={`sticky left-0 z-20 ${stickyCellBg} w-[48px] min-w-[48px] max-w-[48px] align-top border-r border-slate-200 dark:border-slate-800 border-b border-slate-200 dark:border-slate-800 whitespace-normal break-words`}
                               >
                                 <span
-                                  className={`inline-block font-mono text-[9px] font-black px-1 py-0.5 rounded leading-tight ${
+                                  className={`inline-block font-mono text-[10px] font-black px-1 py-0.5 rounded leading-tight ${
                                     isJalon
                                       ? 'bg-amber-400 text-slate-950'
                                       : 'bg-orange-600 text-white'
@@ -1537,10 +1618,10 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                 </span>
                               </td>
 
-                              {/* 2. Activité / Jalon (Locked Col 2, Read-only) */}
+                              {/* 2. Activité / Jalon (Locked Col 2, Read-only — intitulé affiché totalement) */}
                               <td
                                 style={{ position: 'sticky', left: 48 }}
-                                className={`sticky left-[48px] z-20 ${stickyCellBg} w-[116px] min-w-[116px] max-w-[116px] sm:w-[136px] sm:min-w-[136px] sm:max-w-[136px] align-top border-r-2 border-orange-500 dark:border-orange-400 border-b border-slate-200 dark:border-slate-800 shadow-[3px_0_6px_rgba(234,88,12,0.18)] whitespace-normal break-words`}
+                                className={`sticky left-[48px] z-20 ${stickyCellBg} w-[140px] min-w-[140px] max-w-[140px] sm:w-[170px] sm:min-w-[170px] sm:max-w-[170px] align-top border-r-2 border-orange-500 dark:border-orange-400 border-b border-slate-200 dark:border-slate-800 shadow-[3px_0_6px_rgba(234,88,12,0.18)] whitespace-normal break-words`}
                               >
                                 <div
                                   className={`text-[10px] leading-snug whitespace-normal break-words ${
@@ -1553,87 +1634,138 @@ export const OperationalMatrices: React.FC<OperationalMatricesProps> = ({
                                 </div>
                               </td>
 
-                              {/* 3. Réalisateur (R) = Responsable (Multi-actor addition in cell) */}
-                              <td className="align-top border-r border-slate-200 dark:border-slate-800 bg-orange-50/30 dark:bg-orange-950/20">
+                              {/* 3. Réalisateur (R) = Poste / Fonction (Colonne réduite d'1/3 — intitulés des postes affichés totalement) */}
+                              <td className="align-top border-r border-slate-200 dark:border-slate-800 bg-orange-50/30 dark:bg-orange-950/20 w-[130px] min-w-[130px] max-w-[130px] whitespace-normal break-words">
                                 <RaciMultiActorCell
-                                  value={task.assignee || ''}
+                                  value={normalizedR}
                                   isPrimary
                                   language={language}
                                   placeholder={
                                     language === 'EN'
-                                      ? '+ Responsible (R)...'
-                                      : '+ Réalisateur (R)...'
+                                      ? '+ Position (R)...'
+                                      : '+ Poste (R)...'
                                   }
                                   suggestions={allAssignees}
                                   datalistId={`raci-r-${task.id}`}
-                                  onChange={newVal =>
+                                  onChange={newVal => {
+                                    const cleanVal = normalizeRaciFieldList(newVal);
+                                    const firstPos =
+                                      cleanVal
+                                        .split(',')
+                                        .map((s: string) => s.trim())
+                                        .filter(Boolean)[0] || '';
                                     onUpdateTask(projectId, task.id, {
-                                      assignee: newVal
-                                    })
-                                  }
-                                />
-                              </td>
-
-                              {/* 4. Autorité (A) — STRICTLY 1 SINGLE AUTHORITY PER ACTION */}
-                              <td className="align-top border-r border-slate-200 dark:border-slate-800">
-                                <input
-                                  type="text"
-                                  value={task.autorite || ''}
-                                  placeholder={
-                                    language === 'EN'
-                                      ? '1 single Accountable (A)...'
-                                      : '1 seule Autorité (A)...'
-                                  }
-                                  onChange={e => {
-                                    const singleAuthority = e.target.value
-                                      .split(/[,;/]+/)[0];
-                                    onUpdateTask(projectId, task.id, {
-                                      autorite: singleAuthority
+                                      assignee: cleanVal,
+                                      raciR: cleanVal,
+                                      responsabilite: cleanVal,
+                                      ...(firstPos
+                                        ? { gestionnaireRisque: firstPos }
+                                        : {})
                                     });
                                   }}
-                                  className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold text-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF]"
                                 />
                               </td>
 
-                              {/* 5. Consulté (C) — Multi-actor addition in cell + option Néant */}
-                              <td className="align-top border-r border-slate-200 dark:border-slate-800">
+                              {/* 4. Autorité (A) — Colonne réduite d'1/3 — STRICTEMENT 1 SEUL POSTE PAR ACTION (Intitulé du poste affiché totalement) */}
+                              <td className="align-top border-r border-slate-200 dark:border-slate-800 w-[120px] min-w-[120px] max-w-[120px] whitespace-normal break-words">
+                                <div className="flex flex-col gap-1">
+                                  <textarea
+                                    rows={computeWrappedTextareaRows(normalizedA, 12, 2)}
+                                    value={normalizedA}
+                                    placeholder={
+                                      language === 'EN'
+                                        ? '1 Position (A)...'
+                                        : '1 seul Poste (A)...'
+                                    }
+                                    onChange={e => {
+                                      const singleAuthority =
+                                        normalizeRaciActorToPosition(
+                                          e.target.value.split(/[,;/]+/)[0] || ''
+                                        );
+                                      onUpdateTask(projectId, task.id, {
+                                        autorite: singleAuthority,
+                                        raciA: singleAuthority,
+                                        ...(singleAuthority
+                                          ? { decideurProprietaire: singleAuthority }
+                                          : {})
+                                      });
+                                    }}
+                                    className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-800 dark:text-slate-200 px-1.5 py-1 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF] resize-none leading-snug whitespace-normal break-words"
+                                  />
+                                  <select
+                                    value=""
+                                    onChange={e => {
+                                      const picked = normalizeRaciActorToPosition(e.target.value);
+                                      if (!picked) return;
+                                      onUpdateTask(projectId, task.id, {
+                                        autorite: picked,
+                                        raciA: picked,
+                                        decideurProprietaire: picked
+                                      });
+                                    }}
+                                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold text-slate-600 dark:text-slate-300 px-1 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-[#90D5FF] cursor-pointer"
+                                  >
+                                    <option value="">
+                                      {language === 'EN'
+                                        ? '+ Pick (A)...'
+                                        : '+ Choisir (A)...'}
+                                    </option>
+                                    {allAssignees.map(s => (
+                                      <option key={s} value={s}>
+                                        {s}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </td>
+
+                              {/* 5. Consulté (C) — Colonne réduite d'1/3 — Multi-position + option Néant (Intitulés affichés totalement) */}
+                              <td className="align-top border-r border-slate-200 dark:border-slate-800 w-[130px] min-w-[130px] max-w-[130px] whitespace-normal break-words">
                                 <RaciMultiActorCell
-                                  value={task.consulte || ''}
+                                  value={normalizedC}
                                   allowNeant
                                   language={language}
                                   placeholder={
                                     language === 'EN'
-                                      ? '+ Consulted (C) or None...'
-                                      : '+ Consulté (C) ou Néant...'
+                                      ? '+ Position (C)...'
+                                      : '+ Poste (C)...'
                                   }
                                   suggestions={allAssignees}
                                   datalistId={`raci-c-${task.id}`}
-                                  onChange={newVal =>
+                                  onChange={newVal => {
+                                    const cleanVal = isNeantToken(newVal)
+                                      ? newVal
+                                      : normalizeRaciFieldList(newVal);
                                     onUpdateTask(projectId, task.id, {
-                                      consulte: newVal
-                                    })
-                                  }
+                                      consulte: cleanVal,
+                                      raciC: cleanVal
+                                    });
+                                  }}
                                 />
                               </td>
 
-                              {/* 6. Informé (I) — Multi-actor addition in cell + option Néant */}
-                              <td className="align-top">
+                              {/* 6. Informé (I) — Colonne réduite d'1/3 — Multi-position + option Néant (Intitulés affichés totalement) */}
+                              <td className="align-top w-[130px] min-w-[130px] max-w-[130px] whitespace-normal break-words">
                                 <RaciMultiActorCell
-                                  value={task.informe || ''}
+                                  value={normalizedI}
                                   allowNeant
                                   language={language}
                                   placeholder={
                                     language === 'EN'
-                                      ? '+ Informed (I) or None...'
-                                      : '+ Informé (I) ou Néant...'
+                                      ? '+ Position (I)...'
+                                      : '+ Poste (I)...'
                                   }
                                   suggestions={allAssignees}
                                   datalistId={`raci-i-${task.id}`}
-                                  onChange={newVal =>
+                                  onChange={newVal => {
+                                    const cleanVal = isNeantToken(newVal)
+                                      ? newVal
+                                      : normalizeRaciFieldList(newVal);
                                     onUpdateTask(projectId, task.id, {
-                                      informe: newVal
-                                    })
-                                  }
+                                      informe: cleanVal,
+                                      raciI: cleanVal
+                                    });
+                                  }}
                                 />
                               </td>
                             </tr>
